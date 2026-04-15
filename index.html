@@ -1,0 +1,1549 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>🐡 דג הנגיל – הרפתקה תת-ימית</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #000;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      font-family: 'Segoe UI', Arial, sans-serif;
+      overflow: hidden;
+      user-select: none;
+    }
+    #wrapper {
+      position: relative;
+      width: 900px;
+      height: 600px;
+    }
+    canvas {
+      display: block;
+      border-radius: 12px;
+      box-shadow: 0 0 60px rgba(0, 150, 255, 0.6), 0 0 120px rgba(0, 80, 200, 0.3);
+    }
+    #ui-overlay {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+    }
+    /* Mobile controls hint */
+    #hint {
+      position: absolute;
+      bottom: 8px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: rgba(255,255,255,0.5);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+<div id="wrapper">
+  <canvas id="game" width="900" height="600"></canvas>
+  <div id="hint">חיצים / WASD – תנועה &nbsp;|&nbsp; רווח / SPACE – התנפחות</div>
+</div>
+
+<script>
+'use strict';
+
+/* ═══════════════════════════════════════════
+   CONSTANTS & CONFIG
+═══════════════════════════════════════════ */
+const W = 900, H = 600;
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+const STATES = { MENU: 0, PLAYING: 1, PAUSED: 2, DEAD: 3, LEVEL_UP: 4, WIN: 5 };
+
+/* ═══════════════════════════════════════════
+   UTILITY
+═══════════════════════════════════════════ */
+const rnd   = (a, b) => Math.random() * (b - a) + a;
+const rndI  = (a, b) => Math.floor(rnd(a, b + 1));
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const dist  = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const lerp  = (a, b, t) => a + (b - a) * t;
+
+/* ═══════════════════════════════════════════
+   PARTICLE SYSTEM
+═══════════════════════════════════════════ */
+class Particle {
+  constructor(x, y, opts = {}) {
+    this.x = x; this.y = y;
+    this.vx = opts.vx ?? rnd(-2, 2);
+    this.vy = opts.vy ?? rnd(-3, -0.5);
+    this.life = opts.life ?? rnd(40, 80);
+    this.maxLife = this.life;
+    this.r = opts.r ?? rnd(2, 6);
+    this.color = opts.color ?? '#fff';
+    this.gravity = opts.gravity ?? 0;
+    this.fade = opts.fade ?? true;
+  }
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.vy += this.gravity;
+    this.life--;
+  }
+  draw() {
+    const a = this.fade ? this.life / this.maxLife : 1;
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+    ctx.fillStyle = this.color;
+    ctx.fill();
+    ctx.restore();
+  }
+  get dead() { return this.life <= 0; }
+}
+
+/* ═══════════════════════════════════════════
+   BUBBLE (drifts upward)
+═══════════════════════════════════════════ */
+class Bubble {
+  constructor(x, y, r) {
+    this.x = x ?? rnd(0, W);
+    this.y = y ?? rnd(0, H);
+    this.r = r ?? rnd(3, 12);
+    this.vy = rnd(-0.4, -1.2);
+    this.vx = rnd(-0.2, 0.2);
+    this.alpha = rnd(0.15, 0.5);
+    this.wobble = rnd(0, Math.PI * 2);
+  }
+  update() {
+    this.wobble += 0.04;
+    this.x += Math.sin(this.wobble) * 0.5 + this.vx;
+    this.y += this.vy;
+    if (this.y + this.r < 0) { this.y = H + this.r; this.x = rnd(0, W); }
+  }
+  draw() {
+    ctx.save();
+    ctx.globalAlpha = this.alpha;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(180,220,255,0.9)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    // shine
+    ctx.beginPath();
+    ctx.arc(this.x - this.r * 0.3, this.y - this.r * 0.3, this.r * 0.25, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+/* ═══════════════════════════════════════════
+   CORAL (decorative, stays in bottom band)
+═══════════════════════════════════════════ */
+class Coral {
+  constructor() {
+    this.x = rnd(0, W);
+    this.y = rnd(H - 80, H - 20);
+    this.h = rnd(30, 80);
+    this.w = rnd(8, 22);
+    this.color = ['#ff4466', '#ff8800', '#cc44ff', '#ff2266'][rndI(0, 3)];
+    this.branches = rndI(2, 5);
+    this.type = rndI(0, 2);
+  }
+  draw() {
+    ctx.save();
+    ctx.strokeStyle = this.color;
+    ctx.lineWidth = this.w * 0.4;
+    ctx.lineCap = 'round';
+    if (this.type === 0) {
+      // branching coral
+      this._branch(this.x, this.y, -Math.PI / 2, this.h, this.branches);
+    } else {
+      // tube coral
+      const grad = ctx.createLinearGradient(this.x, this.y, this.x, this.y - this.h);
+      grad.addColorStop(0, this.color);
+      grad.addColorStop(1, '#fff');
+      ctx.strokeStyle = grad;
+      ctx.beginPath();
+      ctx.moveTo(this.x, this.y);
+      ctx.lineTo(this.x + Math.sin(this.x) * 10, this.y - this.h);
+      ctx.stroke();
+      // tip blob
+      ctx.beginPath();
+      ctx.arc(this.x + Math.sin(this.x) * 10, this.y - this.h, this.w * 0.6, 0, Math.PI * 2);
+      ctx.fillStyle = this.color;
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+  _branch(x, y, angle, length, depth) {
+    if (depth === 0 || length < 5) return;
+    const ex = x + Math.cos(angle) * length;
+    const ey = y + Math.sin(angle) * length;
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(ex, ey); ctx.stroke();
+    this._branch(ex, ey, angle - 0.5, length * 0.65, depth - 1);
+    this._branch(ex, ey, angle + 0.5, length * 0.65, depth - 1);
+  }
+}
+
+/* ═══════════════════════════════════════════
+   SEAWEED
+═══════════════════════════════════════════ */
+class Seaweed {
+  constructor() {
+    this.x = rnd(0, W);
+    this.segments = rndI(5, 10);
+    this.segH = rnd(12, 20);
+    this.phase = rnd(0, Math.PI * 2);
+    this.color = `hsl(${rndI(100, 140)}, 80%, ${rndI(35, 55)}%)`;
+  }
+  draw(t) {
+    ctx.save();
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = this.color;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    let cx = this.x, cy = H;
+    ctx.moveTo(cx, cy);
+    for (let i = 0; i < this.segments; i++) {
+      const wave = Math.sin(t * 0.02 + this.phase + i * 0.5) * 10;
+      cx += wave; cy -= this.segH;
+      ctx.lineTo(cx, cy);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+/* ═══════════════════════════════════════════
+   SMALL FISH (collectibles)
+═══════════════════════════════════════════ */
+class SmallFish {
+  constructor(level) {
+    this.reset(level);
+    this.y = rnd(60, H - 100);
+    this.x = rnd(0, W);
+  }
+  reset(level) {
+    const side = Math.random() < 0.5 ? -1 : 1;
+    this.x = side < 0 ? -40 : W + 40;
+    this.y = rnd(60, H - 100);
+    this.speed = rnd(1.2, 2.5) + level * 0.15;
+    this.vx = side > 0 ? -this.speed : this.speed;
+    this.vy = rnd(-0.3, 0.3);
+    this.dir = this.vx > 0 ? 1 : -1;
+    this.wobble = 0;
+    this.wobblePhase = rnd(0, Math.PI * 2);
+    this.r = rnd(10, 18);
+    const hue = rndI(0, 360);
+    this.color = `hsl(${hue}, 90%, 60%)`;
+    this.finColor = `hsl(${hue}, 90%, 40%)`;
+    this.points = Math.round(10 + level * 5);
+    this.alive = true;
+    this.flash = 0;
+  }
+  update(t) {
+    this.wobblePhase += 0.1;
+    this.vy = Math.sin(this.wobblePhase) * 0.5;
+    this.x += this.vx;
+    this.y += this.vy;
+    this.y = clamp(this.y, 55, H - 90);
+    if (this.x < -60 || this.x > W + 60) this.alive = false;
+    if (this.flash > 0) this.flash--;
+  }
+  draw() {
+    if (!this.alive) return;
+    const scaleX = this.dir;
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.scale(scaleX, 1);
+    // body
+    ctx.beginPath();
+    ctx.ellipse(0, 0, this.r * 1.6, this.r * 0.85, 0, 0, Math.PI * 2);
+    ctx.fillStyle = this.flash > 0 ? '#fff' : this.color;
+    ctx.fill();
+    // tail
+    ctx.beginPath();
+    ctx.moveTo(this.r * 1.4, 0);
+    ctx.lineTo(this.r * 2.2, -this.r * 0.8);
+    ctx.lineTo(this.r * 2.2, this.r * 0.8);
+    ctx.closePath();
+    ctx.fillStyle = this.finColor;
+    ctx.fill();
+    // dorsal fin
+    ctx.beginPath();
+    ctx.moveTo(-this.r * 0.3, -this.r * 0.85);
+    ctx.quadraticCurveTo(0, -this.r * 1.6, this.r * 0.6, -this.r * 0.85);
+    ctx.fillStyle = this.finColor;
+    ctx.fill();
+    // eye
+    ctx.beginPath();
+    ctx.arc(-this.r * 0.9, -this.r * 0.15, this.r * 0.22, 0, Math.PI * 2);
+    ctx.fillStyle = '#222';
+    ctx.fill();
+    ctx.restore();
+  }
+  get hitRadius() { return this.r * 1.2; }
+}
+
+/* ═══════════════════════════════════════════
+   SHARK (enemy)
+═══════════════════════════════════════════ */
+class Shark {
+  constructor(level) {
+    this.reset(level);
+    this.y = rnd(80, H - 120);
+  }
+  reset(level) {
+    const side = Math.random() < 0.5 ? -1 : 1;
+    this.x = side < 0 ? -80 : W + 80;
+    this.y = rnd(80, H - 120);
+    this.baseSpeed = rnd(1.0, 1.8) + level * 0.2;
+    this.speed = this.baseSpeed;
+    this.vx = side > 0 ? -this.speed : this.speed;
+    this.vy = 0;
+    this.dir = this.vx > 0 ? 1 : -1;
+    this.chaseRadius = 220 + level * 20;
+    this.fleeing = false;
+    this.fleeTimer = 0;
+    this.alive = true;
+    this.biting = 0;
+    this.stun = 0;
+    this.length = rnd(55, 80);
+    this.damage = 15 + level * 5;
+  }
+  update(px, py, puffed) {
+    if (this.stun > 0) { this.stun--; return; }
+    if (this.fleeTimer > 0) {
+      this.fleeing = true;
+      this.fleeTimer--;
+    } else {
+      this.fleeing = false;
+    }
+
+    const dx = px - this.x, dy = py - this.y;
+    const d = Math.hypot(dx, dy);
+
+    if (puffed && d < this.chaseRadius) {
+      // flee from pufferfish
+      const angle = Math.atan2(dy, dx) + Math.PI;
+      this.vx = lerp(this.vx, Math.cos(angle) * this.speed * 2, 0.08);
+      this.vy = lerp(this.vy, Math.sin(angle) * this.speed * 2, 0.08);
+      this.fleeTimer = 60;
+    } else if (!this.fleeing && d < this.chaseRadius) {
+      // chase player
+      const angle = Math.atan2(dy, dx);
+      this.vx = lerp(this.vx, Math.cos(angle) * this.speed, 0.05);
+      this.vy = lerp(this.vy, Math.sin(angle) * this.speed, 0.05);
+    } else {
+      // patrol
+      this.vy = lerp(this.vy, Math.sin(Date.now() * 0.001 + this.x) * 0.5, 0.05);
+    }
+
+    this.dir = this.vx > 0 ? 1 : -1;
+    this.x += this.vx;
+    this.y += this.vy;
+    this.y = clamp(this.y, 60, H - 80);
+    if (this.x < -120 || this.x > W + 120 || this.y < -120 || this.y > H + 120) {
+      this.alive = false;
+    }
+    if (this.biting > 0) this.biting--;
+  }
+  draw() {
+    const L = this.length;
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.scale(this.dir, 1);
+
+    // body gradient
+    const grad = ctx.createLinearGradient(-L * 0.6, -L * 0.22, L * 0.6, L * 0.22);
+    grad.addColorStop(0, this.fleeing ? '#6699bb' : '#778899');
+    grad.addColorStop(1, this.fleeing ? '#aaccee' : '#aabbcc');
+
+    // body
+    ctx.beginPath();
+    ctx.ellipse(0, 0, L * 0.55, L * 0.22, 0, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // belly
+    ctx.beginPath();
+    ctx.ellipse(0, L * 0.08, L * 0.45, L * 0.12, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.fill();
+
+    // tail
+    ctx.beginPath();
+    ctx.moveTo(L * 0.5, 0);
+    ctx.lineTo(L * 0.8, -L * 0.25);
+    ctx.lineTo(L * 0.8, L * 0.25);
+    ctx.closePath();
+    ctx.fillStyle = '#556677';
+    ctx.fill();
+
+    // dorsal fin
+    ctx.beginPath();
+    ctx.moveTo(-L * 0.1, -L * 0.22);
+    ctx.lineTo(L * 0.1, -L * 0.45);
+    ctx.lineTo(L * 0.3, -L * 0.22);
+    ctx.fillStyle = '#556677';
+    ctx.fill();
+
+    // pectoral fin
+    ctx.beginPath();
+    ctx.moveTo(-L * 0.05, L * 0.1);
+    ctx.lineTo(-L * 0.2, L * 0.35);
+    ctx.lineTo(L * 0.1, L * 0.22);
+    ctx.fillStyle = '#667788';
+    ctx.fill();
+
+    // snout
+    ctx.beginPath();
+    ctx.moveTo(-L * 0.52, 0);
+    ctx.lineTo(-L * 0.7, -L * 0.08);
+    ctx.lineTo(-L * 0.7, L * 0.08);
+    ctx.closePath();
+    ctx.fillStyle = '#667788';
+    ctx.fill();
+
+    // mouth (open if biting)
+    if (this.biting > 0) {
+      ctx.beginPath();
+      ctx.moveTo(-L * 0.65, -L * 0.05);
+      ctx.lineTo(-L * 0.78, -L * 0.12);
+      ctx.lineTo(-L * 0.78, L * 0.08);
+      ctx.closePath();
+      ctx.fillStyle = '#cc2244';
+      ctx.fill();
+    }
+
+    // eye
+    ctx.beginPath();
+    ctx.arc(-L * 0.36, -L * 0.06, L * 0.055, 0, Math.PI * 2);
+    ctx.fillStyle = '#111';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(-L * 0.38, -L * 0.08, L * 0.02, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+
+    // stun stars
+    if (this.stun > 0) {
+      for (let i = 0; i < 3; i++) {
+        const a = (Date.now() * 0.01 + i * 2.1) % (Math.PI * 2);
+        const sx = Math.cos(a) * L * 0.4;
+        const sy = Math.sin(a) * L * 0.35 - L * 0.4;
+        ctx.fillStyle = '#ffff00';
+        ctx.font = `${L * 0.18}px serif`;
+        ctx.fillText('★', sx - 6, sy);
+      }
+    }
+
+    ctx.restore();
+  }
+  get hitRadius() { return this.length * 0.4; }
+}
+
+/* ═══════════════════════════════════════════
+   ANGLERFISH (boss-like, stays deeper)
+═══════════════════════════════════════════ */
+class Anglerfish {
+  constructor(level) {
+    this.x = Math.random() < 0.5 ? -100 : W + 100;
+    this.y = rnd(H * 0.45, H * 0.85);
+    this.speed = 0.8 + level * 0.15;
+    this.vx = this.x < 0 ? this.speed : -this.speed;
+    this.vy = 0;
+    this.dir = this.vx > 0 ? 1 : -1;
+    this.alive = true;
+    this.biting = 0;
+    this.size = rnd(45, 65);
+    this.lurePhase = rnd(0, Math.PI * 2);
+    this.damage = 25 + level * 8;
+    this.stun = 0;
+    this.chaseRadius = 180 + level * 15;
+    this.fleeTimer = 0;
+  }
+  update(px, py, puffed) {
+    if (this.stun > 0) { this.stun--; return; }
+    this.lurePhase += 0.06;
+    if (this.fleeTimer > 0) { this.fleeTimer--; }
+
+    const dx = px - this.x, dy = py - this.y;
+    const d = Math.hypot(dx, dy);
+    if (puffed && d < this.chaseRadius) {
+      const a = Math.atan2(dy, dx) + Math.PI;
+      this.vx = lerp(this.vx, Math.cos(a) * this.speed * 2.5, 0.07);
+      this.vy = lerp(this.vy, Math.sin(a) * this.speed * 2.5, 0.07);
+      this.fleeTimer = 80;
+    } else if (this.fleeTimer === 0 && d < this.chaseRadius) {
+      const a = Math.atan2(dy, dx);
+      this.vx = lerp(this.vx, Math.cos(a) * this.speed, 0.04);
+      this.vy = lerp(this.vy, Math.sin(a) * this.speed * 0.6, 0.04);
+    } else {
+      this.vy = lerp(this.vy, Math.sin(Date.now() * 0.0008 + this.y) * 0.6, 0.04);
+    }
+    this.dir = this.vx > 0 ? 1 : -1;
+    this.x += this.vx;
+    this.y += this.vy;
+    this.y = clamp(this.y, H * 0.35, H - 70);
+    if (this.x < -150 || this.x > W + 150) this.alive = false;
+    if (this.biting > 0) this.biting--;
+  }
+  draw() {
+    const S = this.size;
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.scale(this.dir, 1);
+
+    // glow from lure
+    const glow = Math.sin(this.lurePhase) * 0.5 + 0.5;
+    const lureX = -S * 0.3, lureY = -S * 1.1;
+    ctx.save();
+    ctx.globalAlpha = 0.2 + glow * 0.3;
+    const glowGrad = ctx.createRadialGradient(lureX, lureY, 0, lureX, lureY, S * 0.8);
+    glowGrad.addColorStop(0, '#88ffaa');
+    glowGrad.addColorStop(1, 'transparent');
+    ctx.fillStyle = glowGrad;
+    ctx.beginPath(); ctx.arc(lureX, lureY, S * 0.8, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+
+    // body (dark, round)
+    const bodyGrad = ctx.createRadialGradient(-S * 0.1, -S * 0.1, 0, 0, 0, S * 0.7);
+    bodyGrad.addColorStop(0, '#334455');
+    bodyGrad.addColorStop(1, '#111822');
+    ctx.beginPath();
+    ctx.ellipse(0, 0, S * 0.7, S * 0.65, 0, 0, Math.PI * 2);
+    ctx.fillStyle = bodyGrad;
+    ctx.fill();
+
+    // spiny dorsal
+    ctx.fillStyle = '#223344';
+    for (let i = -2; i <= 2; i++) {
+      ctx.beginPath();
+      ctx.moveTo(i * S * 0.15, -S * 0.6);
+      ctx.lineTo(i * S * 0.15 - S * 0.04, -S * 0.85);
+      ctx.lineTo(i * S * 0.15 + S * 0.04, -S * 0.85);
+      ctx.closePath(); ctx.fill();
+    }
+
+    // tail
+    ctx.beginPath();
+    ctx.moveTo(S * 0.65, 0);
+    ctx.lineTo(S * 1.05, -S * 0.35);
+    ctx.lineTo(S * 1.05, S * 0.35);
+    ctx.closePath();
+    ctx.fillStyle = '#223344';
+    ctx.fill();
+
+    // huge jaw
+    ctx.beginPath();
+    ctx.moveTo(-S * 0.6, S * 0.05);
+    ctx.lineTo(-S * 0.85, S * 0.25);
+    ctx.lineTo(-S * 0.1, S * 0.6);
+    ctx.lineTo(S * 0.3, S * 0.55);
+    ctx.closePath();
+    ctx.fillStyle = '#1a2233';
+    ctx.fill();
+
+    // teeth
+    ctx.fillStyle = '#eee';
+    for (let i = 0; i < 5; i++) {
+      const tx = lerp(-S * 0.75, -S * 0.1, i / 4);
+      const ty = lerp(S * 0.2, S * 0.5, i / 4);
+      ctx.beginPath();
+      ctx.moveTo(tx, ty);
+      ctx.lineTo(tx - S * 0.04, ty + S * 0.12);
+      ctx.lineTo(tx + S * 0.04, ty + S * 0.12);
+      ctx.closePath(); ctx.fill();
+    }
+
+    // eye (big, menacing)
+    ctx.beginPath();
+    ctx.arc(-S * 0.28, -S * 0.15, S * 0.18, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffee00';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(-S * 0.28, -S * 0.15, S * 0.09, 0, Math.PI * 2);
+    ctx.fillStyle = '#111';
+    ctx.fill();
+
+    // lure stalk
+    ctx.strokeStyle = '#446655';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-S * 0.1, -S * 0.6);
+    ctx.quadraticCurveTo(-S * 0.4, -S * 0.85, lureX, lureY);
+    ctx.stroke();
+
+    // lure ball
+    const lureBg = ctx.createRadialGradient(lureX, lureY, 0, lureX, lureY, S * 0.15);
+    lureBg.addColorStop(0, `rgba(200,255,180,${0.7 + glow * 0.3})`);
+    lureBg.addColorStop(1, `rgba(50,200,100,${0.4 + glow * 0.3})`);
+    ctx.beginPath();
+    ctx.arc(lureX, lureY, S * 0.12 + glow * S * 0.05, 0, Math.PI * 2);
+    ctx.fillStyle = lureBg;
+    ctx.fill();
+
+    ctx.restore();
+  }
+  get hitRadius() { return this.size * 0.55; }
+}
+
+/* ═══════════════════════════════════════════
+   PUFFERFISH (player)
+═══════════════════════════════════════════ */
+class Pufferfish {
+  constructor() {
+    this.x = W / 2; this.y = H / 2;
+    this.vx = 0; this.vy = 0;
+    this.puffed = false;
+    this.puffLevel = 0;       // 0-1
+    this.puffEnergy = 100;    // max 100
+    this.health = 100;
+    this.maxHealth = 100;
+    this.invincible = 0;
+    this.eatFlash = 0;
+    this.hurtFlash = 0;
+    this.spikeDmg = 18;       // damage dealt when puffed
+    this.trail = [];
+    this.baseR = 24;
+    this.speed = 3.2;
+    this.facing = 1;          // 1=right, -1=left
+    this.swimPhase = 0;
+    this.alive = true;
+  }
+
+  get r() { return this.baseR + this.puffLevel * 16; }
+  get isPuffed() { return this.puffLevel > 0.5; }
+
+  update(keys) {
+    // movement
+    let ax = 0, ay = 0;
+    if (keys['ArrowLeft']  || keys['a'] || keys['A']) ax -= 1;
+    if (keys['ArrowRight'] || keys['d'] || keys['D']) ax += 1;
+    if (keys['ArrowUp']   || keys['w'] || keys['W']) ay -= 1;
+    if (keys['ArrowDown'] || keys['s'] || keys['S']) ay += 1;
+
+    if (ax !== 0 && ay !== 0) { ax *= 0.707; ay *= 0.707; }
+
+    const spd = this.speed * (this.isPuffed ? 0.55 : 1);
+    this.vx = lerp(this.vx, ax * spd, 0.15);
+    this.vy = lerp(this.vy, ay * spd, 0.15);
+    this.x += this.vx;
+    this.y += this.vy;
+    this.x = clamp(this.x, this.r, W - this.r);
+    this.y = clamp(this.y, this.r + 40, H - this.r - 10);
+
+    if (Math.abs(this.vx) > 0.2) this.facing = this.vx > 0 ? 1 : -1;
+    this.swimPhase += 0.1;
+
+    // puffing
+    const wantPuff = keys[' '] || keys['Space'];
+    if (wantPuff && this.puffEnergy > 0) {
+      this.puffLevel = Math.min(1, this.puffLevel + 0.06);
+      this.puffEnergy = Math.max(0, this.puffEnergy - 0.8);
+    } else {
+      this.puffLevel = Math.max(0, this.puffLevel - 0.04);
+      if (!wantPuff) this.puffEnergy = Math.min(100, this.puffEnergy + 0.3);
+    }
+
+    // trail
+    if (Math.abs(this.vx) + Math.abs(this.vy) > 0.5) {
+      this.trail.push({ x: this.x, y: this.y, life: 12 });
+    }
+    this.trail = this.trail.filter(t => --t.life > 0);
+
+    if (this.invincible > 0) this.invincible--;
+    if (this.eatFlash > 0) this.eatFlash--;
+    if (this.hurtFlash > 0) this.hurtFlash--;
+  }
+
+  takeDamage(dmg) {
+    if (this.invincible > 0) return false;
+    this.health = Math.max(0, this.health - dmg);
+    this.invincible = 90;
+    this.hurtFlash = 20;
+    if (this.health <= 0) this.alive = false;
+    return true;
+  }
+
+  draw() {
+    // trail
+    this.trail.forEach(t => {
+      ctx.save();
+      ctx.globalAlpha = t.life / 12 * 0.25;
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, this.r * 0.6, 0, Math.PI * 2);
+      ctx.fillStyle = '#88ddff';
+      ctx.fill();
+      ctx.restore();
+    });
+
+    const R = this.r;
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.scale(this.facing, 1);
+
+    // puff glow
+    if (this.isPuffed) {
+      const glowR = R * 1.7;
+      const glowGrad = ctx.createRadialGradient(0, 0, R * 0.5, 0, 0, glowR);
+      glowGrad.addColorStop(0, 'rgba(255,200,80,0.25)');
+      glowGrad.addColorStop(1, 'transparent');
+      ctx.beginPath(); ctx.arc(0, 0, glowR, 0, Math.PI * 2);
+      ctx.fillStyle = glowGrad; ctx.fill();
+    }
+
+    // body
+    const hurt = this.hurtFlash > 0;
+    const eat  = this.eatFlash > 0;
+    const baseColor = hurt ? '#ff6666' : eat ? '#ffff88' : (this.invincible > 0 && Math.floor(this.invincible / 4) % 2 === 0 ? '#aaffff' : null);
+
+    const bodyGrad = ctx.createRadialGradient(-R * 0.25, -R * 0.25, 0, 0, 0, R);
+    if (baseColor) {
+      bodyGrad.addColorStop(0, baseColor);
+      bodyGrad.addColorStop(1, '#cc8800');
+    } else {
+      bodyGrad.addColorStop(0, '#ffe066');
+      bodyGrad.addColorStop(0.5, '#ffaa00');
+      bodyGrad.addColorStop(1, '#cc6600');
+    }
+
+    ctx.beginPath();
+    ctx.arc(0, 0, R, 0, Math.PI * 2);
+    ctx.fillStyle = bodyGrad;
+    ctx.fill();
+
+    // spots / pattern
+    ctx.save();
+    ctx.globalAlpha = 0.3;
+    ctx.fillStyle = '#cc6600';
+    [[-R * 0.2, R * 0.3, R * 0.12],
+     [R * 0.25, R * 0.2, R * 0.09],
+     [-R * 0.35, -R * 0.2, R * 0.08],
+     [R * 0.1, -R * 0.35, R * 0.1]].forEach(([x, y, r]) => {
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    });
+    ctx.restore();
+
+    // spikes (more spikes when puffed)
+    const spikeCount = this.isPuffed ? 16 : 8;
+    const spikeLen = this.isPuffed ? R * 0.55 : R * 0.3;
+    const spikeW = this.isPuffed ? 3.5 : 2;
+    ctx.strokeStyle = '#995500';
+    ctx.lineWidth = spikeW;
+    ctx.lineCap = 'round';
+    for (let i = 0; i < spikeCount; i++) {
+      const a = (i / spikeCount) * Math.PI * 2 + this.swimPhase * 0.05;
+      const sx = Math.cos(a) * R;
+      const sy = Math.sin(a) * R;
+      const ex = Math.cos(a) * (R + spikeLen);
+      const ey = Math.sin(a) * (R + spikeLen);
+      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
+    }
+
+    // tail fin
+    const tailSwim = Math.sin(this.swimPhase) * 0.3;
+    ctx.save(); ctx.rotate(tailSwim);
+    ctx.beginPath();
+    ctx.moveTo(R * 0.7, 0);
+    ctx.lineTo(R * 1.45, -R * 0.55);
+    ctx.lineTo(R * 1.45, R * 0.55);
+    ctx.closePath();
+    ctx.fillStyle = '#dd8800';
+    ctx.fill();
+    ctx.restore();
+
+    // pectoral fins
+    const finWave = Math.sin(this.swimPhase * 1.5) * 0.25;
+    ctx.save(); ctx.rotate(-0.5 + finWave);
+    ctx.beginPath();
+    ctx.ellipse(-R * 0.2, R * 0.55, R * 0.45, R * 0.18, Math.PI * 0.3, 0, Math.PI * 2);
+    ctx.fillStyle = '#ee9900';
+    ctx.fill();
+    ctx.restore();
+
+    // eye
+    ctx.beginPath();
+    ctx.arc(-R * 0.38, -R * 0.2, R * 0.28, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(-R * 0.34, -R * 0.2, R * 0.16, 0, Math.PI * 2);
+    ctx.fillStyle = '#111';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(-R * 0.3, -R * 0.26, R * 0.06, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+
+    // mouth
+    if (this.isPuffed) {
+      ctx.beginPath();
+      ctx.arc(-R * 0.65, R * 0.1, R * 0.12, 0.1, Math.PI - 0.1);
+      ctx.strokeStyle = '#774400';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+    } else {
+      ctx.beginPath();
+      ctx.arc(-R * 0.68, R * 0.05, R * 0.1, -0.4, 0.4);
+      ctx.strokeStyle = '#774400';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+}
+
+/* ═══════════════════════════════════════════
+   FLOATING TEXT
+═══════════════════════════════════════════ */
+class FloatingText {
+  constructor(x, y, text, color = '#fff', size = 20) {
+    this.x = x; this.y = y; this.text = text;
+    this.color = color; this.size = size;
+    this.life = 70; this.maxLife = 70;
+    this.vy = -1.5;
+  }
+  update() { this.y += this.vy; this.vy *= 0.97; this.life--; }
+  draw() {
+    ctx.save();
+    ctx.globalAlpha = this.life / this.maxLife;
+    ctx.fillStyle = this.color;
+    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+    ctx.lineWidth = 3;
+    ctx.font = `bold ${this.size}px 'Segoe UI', Arial`;
+    ctx.textAlign = 'center';
+    ctx.strokeText(this.text, this.x, this.y);
+    ctx.fillText(this.text, this.x, this.y);
+    ctx.restore();
+  }
+  get dead() { return this.life <= 0; }
+}
+
+/* ═══════════════════════════════════════════
+   STARFISH (bonus item, stationary)
+═══════════════════════════════════════════ */
+class Starfish {
+  constructor() {
+    this.x = rnd(40, W - 40);
+    this.y = rnd(H - 120, H - 50);
+    this.r = rnd(14, 22);
+    this.alive = true;
+    this.bob = rnd(0, Math.PI * 2);
+    this.color = `hsl(${rndI(0, 30)}, 90%, 55%)`;
+  }
+  update() { this.bob += 0.03; }
+  draw() {
+    ctx.save();
+    ctx.translate(this.x, this.y + Math.sin(this.bob) * 3);
+    ctx.fillStyle = this.color;
+    this._star(0, 0, this.r * 0.45, this.r, 5);
+    // center dot
+    ctx.beginPath(); ctx.arc(0, 0, this.r * 0.22, 0, Math.PI * 2);
+    ctx.fillStyle = `hsl(${20}, 90%, 40%)`;
+    ctx.fill();
+    ctx.restore();
+  }
+  _star(cx, cy, ir, or, pts) {
+    ctx.beginPath();
+    for (let i = 0; i < pts * 2; i++) {
+      const a = (i / (pts * 2)) * Math.PI * 2 - Math.PI / 2;
+      const r2 = i % 2 === 0 ? or : ir;
+      i === 0 ? ctx.moveTo(cx + Math.cos(a) * r2, cy + Math.sin(a) * r2)
+              : ctx.lineTo(cx + Math.cos(a) * r2, cy + Math.sin(a) * r2);
+    }
+    ctx.closePath(); ctx.fill();
+  }
+  get hitRadius() { return this.r; }
+}
+
+/* ═══════════════════════════════════════════
+   LEVEL CONFIG
+═══════════════════════════════════════════ */
+const LEVELS = [
+  { sharks: 1, anglerfishes: 0, fishPerWave: 6,  fishWaveInterval: 280, starfish: 2, scoreTarget: 200,  name: 'המים הרדודים' },
+  { sharks: 2, anglerfishes: 0, fishPerWave: 7,  fishWaveInterval: 250, starfish: 3, scoreTarget: 450,  name: 'שונית האלמוגים' },
+  { sharks: 3, anglerfishes: 1, fishPerWave: 8,  fishWaveInterval: 220, starfish: 3, scoreTarget: 750,  name: 'הים הפתוח' },
+  { sharks: 3, anglerfishes: 2, fishPerWave: 9,  fishWaveInterval: 200, starfish: 4, scoreTarget: 1100, name: 'מעמקי הים' },
+  { sharks: 4, anglerfishes: 2, fishPerWave: 10, fishWaveInterval: 180, starfish: 4, scoreTarget: 1600, name: 'תהום האופל' },
+];
+
+/* ═══════════════════════════════════════════
+   GAME STATE
+═══════════════════════════════════════════ */
+let state, score, level, player, sharks, anglerfishes, smallFishes, starfishes,
+    bubbles, corals, seaweeds, particles, floatingTexts, keys, tick,
+    fishWaveTimer, highScore, levelTransTimer, deathTimer;
+
+function initLevel(lvl) {
+  level = lvl;
+  const cfg = LEVELS[lvl];
+  sharks = Array.from({ length: cfg.sharks }, () => new Shark(lvl));
+  anglerfishes = Array.from({ length: cfg.anglerfishes }, () => new Anglerfish(lvl));
+  smallFishes = Array.from({ length: cfg.fishPerWave }, () => new SmallFish(lvl));
+  starfishes = Array.from({ length: cfg.starfish }, () => new Starfish());
+  fishWaveTimer = cfg.fishWaveInterval;
+  particles = [];
+  floatingTexts = [];
+}
+
+function initGame() {
+  state = STATES.PLAYING;
+  score = 0;
+  tick = 0;
+  player = new Pufferfish();
+  bubbles = Array.from({ length: 35 }, () => new Bubble());
+  corals = Array.from({ length: 18 }, () => new Coral());
+  seaweeds = Array.from({ length: 14 }, () => new Seaweed());
+  initLevel(0);
+}
+
+function reset() {
+  highScore = Math.max(highScore ?? 0, score ?? 0);
+  state = STATES.MENU;
+}
+
+/* ═══════════════════════════════════════════
+   INPUT
+═══════════════════════════════════════════ */
+keys = {};
+window.addEventListener('keydown', e => {
+  keys[e.key] = true;
+  if (e.key === ' ') e.preventDefault();
+  if (state === STATES.MENU && (e.key === 'Enter' || e.key === ' ')) initGame();
+  if (state === STATES.DEAD && (e.key === 'Enter' || e.key === ' ')) reset();
+  if (state === STATES.LEVEL_UP && (e.key === 'Enter' || e.key === ' ')) {
+    if (level + 1 < LEVELS.length) {
+      player.health = Math.min(player.maxHealth, player.health + 30);
+      player.puffEnergy = 100;
+      initLevel(level + 1);
+      state = STATES.PLAYING;
+    } else {
+      state = STATES.WIN;
+    }
+  }
+  if (state === STATES.WIN && (e.key === 'Enter' || e.key === ' ')) reset();
+  if (e.key === 'Escape' || e.key === 'p' || e.key === 'P') {
+    if (state === STATES.PLAYING) state = STATES.PAUSED;
+    else if (state === STATES.PAUSED) state = STATES.PLAYING;
+  }
+});
+window.addEventListener('keyup', e => { keys[e.key] = false; });
+
+/* Touch support */
+let touchPuff = false;
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  if (state === STATES.MENU || state === STATES.DEAD || state === STATES.LEVEL_UP || state === STATES.WIN) {
+    if (state === STATES.MENU) initGame();
+    else if (state === STATES.DEAD) reset();
+    else if (state === STATES.LEVEL_UP) {
+      if (level + 1 < LEVELS.length) {
+        player.health = Math.min(player.maxHealth, player.health + 30);
+        player.puffEnergy = 100;
+        initLevel(level + 1);
+        state = STATES.PLAYING;
+      } else state = STATES.WIN;
+    } else if (state === STATES.WIN) reset();
+    return;
+  }
+  // right side of screen = puff, else move
+  const touch = e.touches[0];
+  const bx = canvas.getBoundingClientRect();
+  const tx = touch.clientX - bx.left;
+  if (tx > W * 0.6) touchPuff = true;
+}, { passive: false });
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if (state !== STATES.PLAYING) return;
+  const touch = e.touches[0];
+  const bx = canvas.getBoundingClientRect();
+  const tx = (touch.clientX - bx.left) * (W / bx.width);
+  const ty = (touch.clientY - bx.top) * (H / bx.height);
+  // aim toward touch
+  const dx = tx - player.x, dy = ty - player.y;
+  const len = Math.hypot(dx, dy);
+  if (len > 15) {
+    keys['_touchX'] = dx / len;
+    keys['_touchY'] = dy / len;
+  }
+}, { passive: false });
+canvas.addEventListener('touchend', e => {
+  touchPuff = false;
+  keys['_touchX'] = 0;
+  keys['_touchY'] = 0;
+});
+
+/* ═══════════════════════════════════════════
+   BACKGROUND DRAWING
+═══════════════════════════════════════════ */
+function drawBackground() {
+  // deep ocean gradient
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#001533');
+  bg.addColorStop(0.35, '#002255');
+  bg.addColorStop(0.7, '#001840');
+  bg.addColorStop(1, '#000a1a');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // caustic light rays
+  ctx.save();
+  ctx.globalAlpha = 0.04 + Math.sin(tick * 0.008) * 0.015;
+  for (let i = 0; i < 8; i++) {
+    const x = (i / 8) * W + Math.sin(tick * 0.005 + i) * 30;
+    const grad = ctx.createLinearGradient(x, 0, x + 30, H * 0.6);
+    grad.addColorStop(0, 'rgba(100,200,255,0.8)');
+    grad.addColorStop(1, 'transparent');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(x - 15, 0);
+    ctx.lineTo(x + 15, 0);
+    ctx.lineTo(x + 45, H * 0.6);
+    ctx.lineTo(x - 15, H * 0.6);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // sandy bottom
+  const sand = ctx.createLinearGradient(0, H - 55, 0, H);
+  sand.addColorStop(0, '#1a3a0a');
+  sand.addColorStop(0.3, '#2a5a1a');
+  sand.addColorStop(1, '#1a2a08');
+  ctx.fillStyle = sand;
+  ctx.fillRect(0, H - 55, W, 55);
+
+  // sand ripples
+  ctx.save();
+  ctx.globalAlpha = 0.15;
+  ctx.strokeStyle = '#4a7a2a';
+  ctx.lineWidth = 1.5;
+  for (let i = 0; i < 12; i++) {
+    const rx = (i / 11) * W;
+    ctx.beginPath();
+    ctx.moveTo(rx, H - 50);
+    ctx.quadraticCurveTo(rx + 30, H - 42, rx + 60, H - 50);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawHUD() {
+  const cfg = LEVELS[level];
+
+  // --- HP bar ---
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  roundRect(ctx, 14, 12, 180, 22, 8);
+  ctx.fill();
+
+  const hpW = Math.max(0, (player.health / player.maxHealth) * 172);
+  const hpColor = player.health > 60 ? '#33ee66' : player.health > 30 ? '#ffcc00' : '#ff3333';
+  const hpGrad = ctx.createLinearGradient(18, 18, 18 + hpW, 18);
+  hpGrad.addColorStop(0, hpColor);
+  hpGrad.addColorStop(1, 'rgba(255,255,255,0.4)');
+  ctx.fillStyle = hpGrad;
+  roundRect(ctx, 18, 16, hpW, 14, 5);
+  ctx.fill();
+
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 11px Arial';
+  ctx.textAlign = 'right';
+  ctx.fillText(`❤️ חיים`, 192, 27);
+
+  // --- energy bar ---
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  roundRect(ctx, 14, 40, 180, 18, 7);
+  ctx.fill();
+  const enW = Math.max(0, (player.puffEnergy / 100) * 172);
+  const enGrad = ctx.createLinearGradient(18, 43, 18 + enW, 43);
+  enGrad.addColorStop(0, '#44aaff');
+  enGrad.addColorStop(1, '#aaddff');
+  ctx.fillStyle = enGrad;
+  roundRect(ctx, 18, 42, enW, 12, 4);
+  ctx.fill();
+  ctx.fillStyle = '#aaddff';
+  ctx.font = 'bold 10px Arial';
+  ctx.textAlign = 'right';
+  ctx.fillText('💨 אנרגיה', 192, 52);
+
+  // --- score ---
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  roundRect(ctx, W - 175, 12, 162, 30, 8);
+  ctx.fill();
+  ctx.fillStyle = '#ffd700';
+  ctx.font = 'bold 16px Arial';
+  ctx.textAlign = 'left';
+  ctx.fillText(`★ ניקוד: ${score}`, W - 168, 32);
+
+  // --- level & target ---
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  roundRect(ctx, W - 175, 48, 162, 22, 7);
+  ctx.fill();
+  ctx.fillStyle = '#88ccff';
+  ctx.font = '12px Arial';
+  ctx.textAlign = 'left';
+  const prog = Math.min(score, cfg.scoreTarget);
+  ctx.fillText(`שלב ${level + 1}: ${prog}/${cfg.scoreTarget}`, W - 168, 63);
+
+  // --- puffed indicator ---
+  if (player.isPuffed) {
+    ctx.save();
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = '#ffaa00';
+    ctx.font = 'bold 14px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('💥 מנופח! אויבים בורחים!', W / 2, 60);
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
+function roundRect(c, x, y, w, h, r) {
+  c.beginPath();
+  c.moveTo(x + r, y);
+  c.lineTo(x + w - r, y);
+  c.quadraticCurveTo(x + w, y, x + w, y + r);
+  c.lineTo(x + w, y + h - r);
+  c.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  c.lineTo(x + r, y + h);
+  c.quadraticCurveTo(x, y + h, x, y + h - r);
+  c.lineTo(x, y + r);
+  c.quadraticCurveTo(x, y, x + r, y);
+  c.closePath();
+}
+
+/* ═══════════════════════════════════════════
+   SCREEN RENDERERS
+═══════════════════════════════════════════ */
+function drawMenu() {
+  drawBackground();
+  bubbles.forEach(b => { b.update(); b.draw(); });
+
+  // Title panel
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,10,40,0.75)';
+  roundRect(ctx, W / 2 - 260, 70, 520, 420, 20);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(80,180,255,0.5)';
+  ctx.lineWidth = 2;
+  roundRect(ctx, W / 2 - 260, 70, 520, 420, 20);
+  ctx.stroke();
+
+  // Big pufferfish graphic at top
+  ctx.save();
+  ctx.translate(W / 2, 165);
+  const R = 50;
+  const bodyG = ctx.createRadialGradient(-12, -12, 0, 0, 0, R);
+  bodyG.addColorStop(0, '#ffe066');
+  bodyG.addColorStop(0.5, '#ffaa00');
+  bodyG.addColorStop(1, '#cc6600');
+  ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2);
+  ctx.fillStyle = bodyG; ctx.fill();
+  for (let i = 0; i < 16; i++) {
+    const a = (i / 16) * Math.PI * 2;
+    ctx.strokeStyle = '#995500'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a) * R, Math.sin(a) * R);
+    ctx.lineTo(Math.cos(a) * (R + 22), Math.sin(a) * (R + 22));
+    ctx.stroke();
+  }
+  ctx.beginPath(); ctx.arc(-18, -10, 13, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill();
+  ctx.beginPath(); ctx.arc(-15, -10, 7, 0, Math.PI * 2); ctx.fillStyle = '#111'; ctx.fill();
+  ctx.beginPath(); ctx.arc(-13, -13, 3, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill();
+  ctx.restore();
+
+  ctx.fillStyle = '#ffd700';
+  ctx.font = 'bold 42px Arial';
+  ctx.textAlign = 'center';
+  ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 4;
+  ctx.strokeText('🐡 דג הנגיל', W / 2, 235);
+  ctx.fillText('🐡 דג הנגיל', W / 2, 235);
+
+  ctx.fillStyle = '#88ccff';
+  ctx.font = '18px Arial';
+  ctx.fillText('הרפתקה תת-ימית', W / 2, 262);
+
+  ctx.fillStyle = '#cceeff';
+  ctx.font = '14px Arial';
+  const lines = [
+    '🏹 חיצים / WASD – תזוזה',
+    '💨 רווח / SPACE – התנפח!',
+    '🐟 אכול דגים קטנים – קבל נקודות',
+    '🦈 כשאתה מנופח – כרישים בורחים!',
+    '⭐ אסוף כוכבי ים לבונוס',
+  ];
+  lines.forEach((l, i) => ctx.fillText(l, W / 2, 300 + i * 26));
+
+  // blinking start text
+  if (Math.floor(tick / 30) % 2 === 0) {
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 20px Arial';
+    ctx.fillText('לחץ ENTER / רווח להתחלה', W / 2, 450);
+  }
+
+  if (highScore > 0) {
+    ctx.fillStyle = '#ffd700';
+    ctx.font = '14px Arial';
+    ctx.fillText(`שיא: ${highScore}`, W / 2, 478);
+  }
+
+  ctx.restore();
+}
+
+function drawDead() {
+  // dim overlay
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = 'rgba(60,0,0,0.75)';
+  roundRect(ctx, W / 2 - 200, H / 2 - 130, 400, 260, 20);
+  ctx.fill();
+  ctx.strokeStyle = '#ff4444'; ctx.lineWidth = 2;
+  roundRect(ctx, W / 2 - 200, H / 2 - 130, 400, 260, 20);
+  ctx.stroke();
+
+  ctx.fillStyle = '#ff4444';
+  ctx.font = 'bold 44px Arial';
+  ctx.textAlign = 'center';
+  ctx.fillText('💀 נפלת!', W / 2, H / 2 - 65);
+
+  ctx.fillStyle = '#ffd700';
+  ctx.font = 'bold 24px Arial';
+  ctx.fillText(`ניקוד סופי: ${score}`, W / 2, H / 2 - 20);
+
+  if (highScore > score) {
+    ctx.fillStyle = '#aaa';
+    ctx.font = '16px Arial';
+    ctx.fillText(`שיא: ${highScore}`, W / 2, H / 2 + 15);
+  } else if (score > 0) {
+    ctx.fillStyle = '#ffd700';
+    ctx.font = '16px Arial';
+    ctx.fillText('🏆 שיא חדש!', W / 2, H / 2 + 15);
+  }
+
+  if (Math.floor(tick / 30) % 2 === 0) {
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 18px Arial';
+    ctx.fillText('לחץ ENTER לתפריט', W / 2, H / 2 + 65);
+  }
+  ctx.restore();
+}
+
+function drawLevelUp() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = 'rgba(0,30,70,0.85)';
+  roundRect(ctx, W / 2 - 220, H / 2 - 120, 440, 240, 20);
+  ctx.fill();
+  ctx.strokeStyle = '#44aaff'; ctx.lineWidth = 2;
+  roundRect(ctx, W / 2 - 220, H / 2 - 120, 440, 240, 20);
+  ctx.stroke();
+
+  ctx.fillStyle = '#44ff88';
+  ctx.font = 'bold 36px Arial';
+  ctx.textAlign = 'center';
+  ctx.fillText('✨ עלית שלב!', W / 2, H / 2 - 60);
+
+  const nextLvl = level + 1;
+  const name = nextLvl < LEVELS.length ? LEVELS[nextLvl].name : '(סיום)';
+  ctx.fillStyle = '#88ccff';
+  ctx.font = '20px Arial';
+  ctx.fillText(`שלב ${nextLvl + 1}: ${name}`, W / 2, H / 2 - 20);
+
+  ctx.fillStyle = '#ccc';
+  ctx.font = '15px Arial';
+  ctx.fillText('+30 חיים!', W / 2, H / 2 + 20);
+
+  if (Math.floor(tick / 30) % 2 === 0) {
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 17px Arial';
+    ctx.fillText('לחץ ENTER להמשך', W / 2, H / 2 + 75);
+  }
+  ctx.restore();
+}
+
+function drawWin() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = 'rgba(10,40,0,0.85)';
+  roundRect(ctx, W / 2 - 240, H / 2 - 150, 480, 300, 24);
+  ctx.fill();
+  ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 3;
+  roundRect(ctx, W / 2 - 240, H / 2 - 150, 480, 300, 24);
+  ctx.stroke();
+
+  ctx.fillStyle = '#ffd700';
+  ctx.font = 'bold 44px Arial';
+  ctx.textAlign = 'center';
+  ctx.fillText('🏆 ניצחת!', W / 2, H / 2 - 85);
+
+  ctx.fillStyle = '#fff';
+  ctx.font = '22px Arial';
+  ctx.fillText('כיבשת את כל המעמקים!', W / 2, H / 2 - 38);
+
+  ctx.fillStyle = '#ffd700';
+  ctx.font = 'bold 28px Arial';
+  ctx.fillText(`ניקוד: ${score}`, W / 2, H / 2 + 10);
+
+  ctx.fillStyle = '#aaffaa';
+  ctx.font = '16px Arial';
+  ctx.fillText('אתה הדג הנגיל הגדול ביותר בים!', W / 2, H / 2 + 50);
+
+  if (Math.floor(tick / 30) % 2 === 0) {
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 18px Arial';
+    ctx.fillText('לחץ ENTER לתפריט', W / 2, H / 2 + 105);
+  }
+  ctx.restore();
+}
+
+function drawPaused() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 40px Arial';
+  ctx.textAlign = 'center';
+  ctx.fillText('⏸ משחק מושהה', W / 2, H / 2);
+  ctx.font = '20px Arial';
+  ctx.fillText('לחץ P / ESC להמשך', W / 2, H / 2 + 45);
+  ctx.restore();
+}
+
+/* ═══════════════════════════════════════════
+   GAMEPLAY UPDATE
+═══════════════════════════════════════════ */
+function updateGame() {
+  tick++;
+
+  // touch-based movement injection
+  if (keys['_touchX'] || keys['_touchY']) {
+    const tx = keys['_touchX'] || 0, ty = keys['_touchY'] || 0;
+    if (Math.abs(tx) > 0.3) { keys['ArrowRight'] = tx > 0; keys['ArrowLeft'] = tx < 0; }
+    else { keys['ArrowRight'] = false; keys['ArrowLeft'] = false; }
+    if (Math.abs(ty) > 0.3) { keys['ArrowDown'] = ty > 0; keys['ArrowUp'] = ty < 0; }
+    else { keys['ArrowDown'] = false; keys['ArrowUp'] = false; }
+    if (touchPuff) keys[' '] = true;
+  }
+
+  player.update(keys);
+
+  // waves of small fish
+  fishWaveTimer--;
+  if (fishWaveTimer <= 0) {
+    const cfg = LEVELS[level];
+    fishWaveTimer = cfg.fishWaveInterval;
+    for (let i = 0; i < 3; i++) smallFishes.push(new SmallFish(level));
+  }
+
+  // occasionally spawn more sharks/anglerfish
+  if (tick % 600 === 0) {
+    if (sharks.length < LEVELS[level].sharks + 2)
+      sharks.push(new Shark(level));
+  }
+  if (tick % 900 === 0 && LEVELS[level].anglerfishes > 0) {
+    if (anglerfishes.length < LEVELS[level].anglerfishes + 1)
+      anglerfishes.push(new Anglerfish(level));
+  }
+
+  // update enemies
+  sharks.forEach(s => s.update(player.x, player.y, player.isPuffed));
+  anglerfishes.forEach(a => a.update(player.x, player.y, player.isPuffed));
+  bubbles.forEach(b => b.update());
+  seaweeds.forEach(sw => {/* static */});
+  starfishes.forEach(sf => sf.update());
+  smallFishes.forEach(f => f.update(tick));
+  particles.forEach(p => p.update());
+  floatingTexts.forEach(ft => ft.update());
+  particles = particles.filter(p => !p.dead);
+  floatingTexts = floatingTexts.filter(ft => !ft.dead);
+
+  // --- COLLISIONS: player eats small fish ---
+  smallFishes.forEach(f => {
+    if (!f.alive) return;
+    if (dist(player, f) < player.r + f.hitRadius) {
+      f.alive = false;
+      score += f.points;
+      player.eatFlash = 10;
+      // eat particles
+      for (let i = 0; i < 8; i++) {
+        particles.push(new Particle(f.x, f.y, {
+          color: f.color, r: rnd(3, 7), life: rnd(20, 40),
+          vx: rnd(-3, 3), vy: rnd(-3, 3)
+        }));
+      }
+      floatingTexts.push(new FloatingText(f.x, f.y - 20, `+${f.points}`, '#ffd700', 18));
+    }
+  });
+  smallFishes = smallFishes.filter(f => f.alive);
+
+  // --- COLLISIONS: player eats starfish ---
+  starfishes.forEach(sf => {
+    if (!sf.alive) return;
+    if (dist(player, sf) < player.r + sf.hitRadius) {
+      sf.alive = false;
+      const bonus = 50 + level * 20;
+      score += bonus;
+      player.puffEnergy = Math.min(100, player.puffEnergy + 25);
+      player.eatFlash = 15;
+      for (let i = 0; i < 12; i++) {
+        particles.push(new Particle(sf.x, sf.y, {
+          color: sf.color, r: rnd(4, 9), life: rnd(25, 50),
+          vx: rnd(-4, 4), vy: rnd(-4, 0)
+        }));
+      }
+      floatingTexts.push(new FloatingText(sf.x, sf.y - 30, `+${bonus} ⭐`, '#ff8800', 22));
+    }
+  });
+  starfishes = starfishes.filter(sf => sf.alive);
+  // respawn starfish
+  if (tick % 400 === 0 && starfishes.length < LEVELS[level].starfish) {
+    starfishes.push(new Starfish());
+  }
+
+  // --- COLLISIONS: sharks hit player / player stuns shark when puffed ---
+  sharks.forEach(s => {
+    if (!s.alive) return;
+    if (dist(player, s) < player.r + s.hitRadius) {
+      if (player.isPuffed && s.stun === 0) {
+        // player damages shark with spikes
+        s.stun = 120;
+        s.fleeTimer = 180;
+        const bonus = 30 + level * 10;
+        score += bonus;
+        floatingTexts.push(new FloatingText(s.x, s.y - 30, `💥 +${bonus}`, '#ff8800', 20));
+        for (let i = 0; i < 10; i++) {
+          particles.push(new Particle(s.x, s.y, {
+            color: '#ff8800', r: rnd(4, 8), life: rnd(20, 40),
+            vx: rnd(-4, 4), vy: rnd(-4, 2)
+          }));
+        }
+      } else if (!player.isPuffed) {
+        // shark bites player
+        if (player.takeDamage(s.damage)) {
+          s.biting = 20;
+          for (let i = 0; i < 8; i++) {
+            particles.push(new Particle(player.x, player.y, {
+              color: '#ff2222', r: rnd(3, 6), life: rnd(15, 30),
+              vx: rnd(-3, 3), vy: rnd(-3, 1)
+            }));
+          }
+          floatingTexts.push(new FloatingText(player.x, player.y - 40, `−${s.damage} ❤️`, '#ff4444', 18));
+        }
+      }
+    }
+  });
+
+  // --- COLLISIONS: anglerfish hit player ---
+  anglerfishes.forEach(a => {
+    if (!a.alive) return;
+    if (dist(player, a) < player.r + a.hitRadius) {
+      if (player.isPuffed && a.stun === 0) {
+        a.stun = 150;
+        a.fleeTimer = 200;
+        const bonus = 60 + level * 15;
+        score += bonus;
+        floatingTexts.push(new FloatingText(a.x, a.y - 40, `⚡ +${bonus}`, '#44ffaa', 22));
+        for (let i = 0; i < 14; i++) {
+          particles.push(new Particle(a.x, a.y, {
+            color: '#44ffaa', r: rnd(5, 10), life: rnd(25, 50),
+            vx: rnd(-5, 5), vy: rnd(-5, 2)
+          }));
+        }
+      } else if (!player.isPuffed) {
+        if (player.takeDamage(a.damage)) {
+          a.biting = 25;
+          for (let i = 0; i < 10; i++) {
+            particles.push(new Particle(player.x, player.y, {
+              color: '#ff1111', r: rnd(4, 8), life: rnd(18, 35),
+              vx: rnd(-4, 4), vy: rnd(-4, 1)
+            }));
+          }
+          floatingTexts.push(new FloatingText(player.x, player.y - 50, `−${a.damage} ❤️`, '#ff3333', 20));
+        }
+      }
+    }
+  });
+
+  // clean dead entities
+  sharks = sharks.filter(s => s.alive);
+  anglerfishes = anglerfishes.filter(a => a.alive);
+
+  // check death
+  if (!player.alive) {
+    state = STATES.DEAD;
+    highScore = Math.max(highScore ?? 0, score);
+    for (let i = 0; i < 30; i++) {
+      particles.push(new Particle(player.x, player.y, {
+        color: ['#ffaa00', '#ff5500', '#ff0000', '#ffff00'][rndI(0, 3)],
+        r: rnd(5, 14), life: rnd(40, 80),
+        vx: rnd(-6, 6), vy: rnd(-6, 2)
+      }));
+    }
+    return;
+  }
+
+  // check level up
+  const cfg = LEVELS[level];
+  if (score >= cfg.scoreTarget) {
+    state = STATES.LEVEL_UP;
+  }
+}
+
+function drawGame() {
+  drawBackground();
+  seaweeds.forEach(sw => sw.draw(tick));
+  corals.forEach(c => c.draw());
+  bubbles.forEach(b => b.draw());
+  starfishes.forEach(sf => sf.draw());
+  smallFishes.forEach(f => f.draw());
+  sharks.forEach(s => s.draw());
+  anglerfishes.forEach(a => a.draw());
+  particles.forEach(p => p.draw());
+  player.draw();
+  floatingTexts.forEach(ft => ft.draw());
+  drawHUD();
+}
+
+/* ═══════════════════════════════════════════
+   MAIN LOOP
+═══════════════════════════════════════════ */
+highScore = 0;
+// pre-init bubbles for menu
+bubbles = Array.from({ length: 30 }, () => new Bubble());
+tick = 0;
+state = STATES.MENU;
+
+function loop() {
+  requestAnimationFrame(loop);
+  tick++;
+  switch (state) {
+    case STATES.MENU:    drawMenu(); break;
+    case STATES.PLAYING: updateGame(); drawGame(); break;
+    case STATES.PAUSED:  drawGame(); drawPaused(); break;
+    case STATES.DEAD:    drawGame(); drawDead(); break;
+    case STATES.LEVEL_UP: drawGame(); drawLevelUp(); break;
+    case STATES.WIN:     drawGame(); drawWin(); break;
+  }
+}
+
+loop();
+</script>
+</body>
+</html>
