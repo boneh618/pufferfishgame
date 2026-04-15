@@ -1330,8 +1330,6 @@ function drawPaused() {
    GAMEPLAY UPDATE
 ═══════════════════════════════════════════ */
 function updateGame() {
-  tick++;
-
   // touch-based movement injection
   if (keys['_touchX'] || keys['_touchY']) {
     const tx = keys['_touchX'] || 0, ty = keys['_touchY'] || 0;
@@ -1366,7 +1364,6 @@ function updateGame() {
   sharks.forEach(s => s.update(player.x, player.y, player.isPuffed));
   anglerfishes.forEach(a => a.update(player.x, player.y, player.isPuffed));
   bubbles.forEach(b => b.update());
-  seaweeds.forEach(sw => {/* static */});
   starfishes.forEach(sf => sf.update());
   smallFishes.forEach(f => f.update(tick));
   particles.forEach(p => p.update());
