@@ -1,51 +1,119 @@
 <!DOCTYPE html>
-<html>
+<html lang="he" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<title>Puffer Fish Game</title>
+<title>🐡 דג הבלון</title>
+
 <style>
 body{
   margin:0;
+  font-family:Arial;
   background:#001d3d;
   display:flex;
   justify-content:center;
   align-items:center;
   height:100vh;
+  color:white;
 }
-canvas{
+
+#gameCanvas{
+  display:none;
   border-radius:16px;
   box-shadow:0 0 40px rgba(0,150,255,0.6);
+}
+
+.screen{
+  text-align:center;
+}
+
+button{
+  padding:12px 20px;
+  margin:10px;
+  font-size:18px;
+  border:none;
+  border-radius:10px;
+  background:#00b4d8;
+  color:white;
+  cursor:pointer;
 }
 </style>
 </head>
 
 <body>
-<canvas id="c" width="900" height="600"></canvas>
+
+<!-- 🏠 LOBBY -->
+<div id="lobby" class="screen">
+  <h1>🐡 דג הבלון</h1>
+  <p>💰 מטבעות: <span id="coins">0</span></p>
+
+  <button onclick="startGame()">▶ שחק</button>
+  <button onclick="openShop()">🛒 חנות</button>
+</div>
+
+<!-- 🛒 SHOP -->
+<div id="shop" class="screen" style="display:none;">
+  <h2>🛒 חנות סקינים</h2>
+
+  <button onclick="buySkin('orange',0)">רגיל (חינם)</button><br>
+  <button onclick="buySkin('red',50)">אדום - 50</button><br>
+  <button onclick="buySkin('green',100)">ירוק - 100</button><br>
+
+  <button onclick="backLobby()">⬅ חזור</button>
+</div>
+
+<!-- 🎮 GAME -->
+<canvas id="gameCanvas" width="900" height="600"></canvas>
 
 <script>
-const c=document.getElementById("c");
-const ctx=c.getContext("2d");
+let canvas=document.getElementById("gameCanvas");
+let ctx=canvas.getContext("2d");
 
-let keys={};
-onkeydown=e=>keys[e.key]=true;
-onkeyup=e=>keys[e.key]=false;
+let coins=0;
+let currentSkin="orange";
 
-const rnd=(a,b)=>Math.random()*(b-a)+a;
-
-// 🌊 bubbles
-let bubbles=[];
-
-function spawnBubble(x,y){
-  bubbles.push({x,y,r:3,life:60});
+function updateCoins(){
+  document.getElementById("coins").innerText=coins;
 }
 
-// 🐡 PLAYER
+// 🏠 NAVIGATION
+function startGame(){
+  document.getElementById("lobby").style.display="none";
+  canvas.style.display="block";
+  initGame();
+}
+
+function openShop(){
+  document.getElementById("lobby").style.display="none";
+  document.getElementById("shop").style.display="block";
+}
+
+function backLobby(){
+  document.getElementById("shop").style.display="none";
+  document.getElementById("lobby").style.display="block";
+  updateCoins();
+}
+
+// 🛒 SHOP
+function buySkin(color,price){
+  if(coins>=price){
+    coins-=price;
+    currentSkin=color;
+    alert("קנית סקין!");
+    updateCoins();
+  }else{
+    alert("אין מספיק כסף!");
+  }
+}
+
+// 🎮 GAME LOGIC
+let player;
+let fishes=[];
+let sharks=[];
+
 class Player{
   constructor(){
     this.x=450;
     this.y=300;
-    this.r=20;
-    this.energy=100;
     this.t=0;
   }
 
@@ -58,83 +126,55 @@ class Player{
     if(keys["d"]||keys["ArrowRight"]) this.x+=speed;
     if(keys["w"]||keys["ArrowUp"]) this.y-=speed;
     if(keys["s"]||keys["ArrowDown"]) this.y+=speed;
-
-    spawnBubble(this.x-10,this.y);
   }
 
   draw(){
-    let tailWave=Math.sin(this.t)*5;
+    let tail=Math.sin(this.t)*5;
 
-    // גוף
-    ctx.fillStyle="#ffb703";
+    ctx.fillStyle=currentSkin;
+
     ctx.beginPath();
-    ctx.arc(this.x,this.y,this.r,0,Math.PI*2);
+    ctx.arc(this.x,this.y,20,0,Math.PI*2);
     ctx.fill();
 
-    // קוצים
-    for(let i=0;i<16;i++){
-      let a=i*(Math.PI*2/16);
-      ctx.beginPath();
-      ctx.moveTo(this.x,this.y);
-      ctx.lineTo(this.x+Math.cos(a)*(this.r+8),this.y+Math.sin(a)*(this.r+8));
-      ctx.strokeStyle="#fb8500";
-      ctx.stroke();
-    }
-
-    // עין
-    ctx.fillStyle="white";
+    // tail
     ctx.beginPath();
-    ctx.arc(this.x+6,this.y-4,4,0,Math.PI*2);
-    ctx.fill();
-
-    ctx.fillStyle="black";
-    ctx.beginPath();
-    ctx.arc(this.x+7,this.y-4,2,0,Math.PI*2);
-    ctx.fill();
-
-    // זנב (אנימציה!)
-    ctx.fillStyle="#fb8500";
-    ctx.beginPath();
-    ctx.moveTo(this.x-this.r,this.y);
-    ctx.lineTo(this.x-this.r-12,this.y+tailWave);
-    ctx.lineTo(this.x-this.r-12,this.y-tailWave);
+    ctx.moveTo(this.x-20,this.y);
+    ctx.lineTo(this.x-30,this.y+tail);
+    ctx.lineTo(this.x-30,this.y-tail);
     ctx.fill();
   }
 }
 
-// 🐟 FISH
+// 🐟 FISH WITH RARITY
 class Fish{
   constructor(){
-    this.x=rnd(0,900);
-    this.y=rnd(0,600);
-    this.speed=rnd(1,2);
+    this.reset();
   }
 
-  update(){
-    this.x+=this.speed;
-    if(this.x>920)this.x=-20;
+  reset(){
+    this.x=Math.random()*900;
+    this.y=Math.random()*600;
+
+    let r=Math.random();
+    if(r<0.7){ this.color="yellow"; this.value=5; }
+    else if(r<0.9){ this.color="blue"; this.value=15; }
+    else{ this.color="purple"; this.value=40; }
   }
 
   draw(){
-    ctx.fillStyle="yellow";
+    ctx.fillStyle=this.color;
     ctx.beginPath();
     ctx.ellipse(this.x,this.y,10,6,0,0,Math.PI*2);
     ctx.fill();
-
-    ctx.beginPath();
-    ctx.moveTo(this.x-10,this.y);
-    ctx.lineTo(this.x-18,this.y-6);
-    ctx.lineTo(this.x-18,this.y+6);
-    ctx.fill();
   }
 }
 
-// 🦈 CHASING SHARK
+// 🦈 CHASING ENEMY
 class Shark{
   constructor(){
-    this.x=rnd(0,900);
-    this.y=rnd(0,600);
-    this.speed=1.5;
+    this.x=Math.random()*900;
+    this.y=Math.random()*600;
   }
 
   update(){
@@ -142,8 +182,8 @@ class Shark{
     let dy=player.y-this.y;
     let d=Math.hypot(dx,dy);
 
-    this.x+=dx/d*this.speed;
-    this.y+=dy/d*this.speed;
+    this.x+=dx/d*1.5;
+    this.y+=dy/d*1.5;
   }
 
   draw(){
@@ -151,60 +191,34 @@ class Shark{
     ctx.beginPath();
     ctx.ellipse(this.x,this.y,30,15,0,0,Math.PI*2);
     ctx.fill();
-
-    ctx.beginPath();
-    ctx.moveTo(this.x,this.y-15);
-    ctx.lineTo(this.x+10,this.y-35);
-    ctx.lineTo(this.x+20,this.y-15);
-    ctx.fill();
   }
 }
 
-let player=new Player();
-let fishes=Array.from({length:10},()=>new Fish());
-let sharks=Array.from({length:3},()=>new Shark());
+let keys={};
+onkeydown=e=>keys[e.key]=true;
+onkeyup=e=>keys[e.key]=false;
 
-function drawBackground(){
-  let g=ctx.createLinearGradient(0,0,0,600);
-  g.addColorStop(0,"#003566");
-  g.addColorStop(1,"#001d3d");
-  ctx.fillStyle=g;
-  ctx.fillRect(0,0,900,600);
-}
+function initGame(){
+  player=new Player();
+  fishes=Array.from({length:10},()=>new Fish());
+  sharks=Array.from({length:3},()=>new Shark());
 
-function updateBubbles(){
-  bubbles.forEach(b=>{
-    b.y-=1;
-    b.life--;
-  });
-  bubbles=bubbles.filter(b=>b.life>0);
-}
-
-function drawBubbles(){
-  ctx.fillStyle="rgba(200,240,255,0.6)";
-  bubbles.forEach(b=>{
-    ctx.beginPath();
-    ctx.arc(b.x,b.y,b.r,0,Math.PI*2);
-    ctx.fill();
-  });
+  loop();
 }
 
 function loop(){
-  drawBackground();
-
-  updateBubbles();
-  drawBubbles();
+  ctx.fillStyle="#003566";
+  ctx.fillRect(0,0,900,600);
 
   player.update();
   player.draw();
 
   fishes.forEach(f=>{
-    f.update();
     f.draw();
 
     if(Math.hypot(player.x-f.x,player.y-f.y)<20){
-      f.x=rnd(0,900);
-      f.y=rnd(0,600);
+      coins+=f.value;
+      f.reset();
     }
   });
 
@@ -213,15 +227,19 @@ function loop(){
     s.draw();
 
     if(Math.hypot(player.x-s.x,player.y-s.y)<35){
-      alert("💀 Game Over");
-      location.reload();
+      gameOver();
     }
   });
 
   requestAnimationFrame(loop);
 }
 
-loop();
+function gameOver(){
+  canvas.style.display="none";
+  document.getElementById("lobby").style.display="block";
+  updateCoins();
+  alert("💀 מתת! חזרת ללובי");
+}
 </script>
 </body>
 </html>
