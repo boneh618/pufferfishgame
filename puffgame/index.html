@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="he">
+<head>
+<meta charset="UTF-8">
+<title>🐡 דג הבלון</title>
+
+<style>
+body {
+    margin: 0;
+    background: linear-gradient(#003,#0af);
+    overflow: hidden;
+    font-family: Arial;
+}
+
+canvas {
+    display: block;
+}
+
+#ui {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    color: white;
+    font-size: 18px;
+}
+
+#lobby {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,50,0.9);
+    color: white;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+button {
+    padding: 10px 20px;
+    margin: 10px;
+    font-size: 18px;
+}
+</style>
+</head>
+
+<body>
+
+<div id="lobby">
+<h1>🐡 דג הבלון</h1>
+<p>אסוף דגים, היזהר מכרישים, והילחם בבוס!</p>
+<button onclick="startGame()">התחל משחק</button>
+<button onclick="openShop()">חנות סקינים</button>
+</div>
+
+<div id="ui">
+💰 מטבעות: <span id="coins">0</span>
+</div>
+
+<canvas id="game"></canvas>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+// ===== LOAD IMAGES =====
+const images = {
+    red: new Image(),
+    yellow: new Image(),
+    green: new Image(),
+    blue: new Image(),
+    shark1: new Image(),
+    shark2: new Image(),
+    boss: new Image()
+};
+
+images.red.src = "red_fish.png";
+images.yellow.src = "yellow_fish.png";
+images.green.src = "green_fish.png";
+images.blue.src = "blue_fish.png";
+images.shark1.src = "shark_1.png";
+images.shark2.src = "shark_2.png";
+images.boss.src = "boss.png";
+
+// ===== PLAYER =====
+let player = {
+    x: 200,
+    y: 200,
+    size: 40,
+    speed: 4,
+    inflated: false
+};
+
+// ===== GAME DATA =====
+let coins = localStorage.getItem("coins") || 0;
+document.getElementById("coins").innerText = coins;
+
+let fishList = [];
+let sharks = [];
+let boss = null;
+
+let gameRunning = false;
+let score = 0;
+
+// ===== SPAWN =====
+function spawnFish() {
+    const types = [
+        {img: images.red, value: 1},
+        {img: images.yellow, value: 2},
+        {img: images.green, value: 3},
+        {img: images.blue, value: 5}
+    ];
+
+    let type = types[Math.floor(Math.random()*types.length)];
+
+    fishList.push({
+        x: Math.random()*canvas.width,
+        y: Math.random()*canvas.height,
+        size: 30,
+        img: type.img,
+        value: type.value
+    });
+}
+
+function spawnShark() {
+    sharks.push({
+        x: Math.random()*canvas.width,
+        y: Math.random()*canvas.height,
+        size: 80,
+        speed: 2,
+        img: Math.random() > 0.5 ? images.shark1 : images.shark2
+    });
+}
+
+// ===== CONTROLS =====
+let keys = {};
+document.addEventListener("keydown", e=>{
+    keys[e.key]=true;
+    if(e.key===" ") player.inflated = true;
+});
+document.addEventListener("keyup", e=>{
+    keys[e.key]=false;
+    if(e.key===" ") player.inflated = false;
+});
+
+// TOUCH
+canvas.addEventListener("touchmove", e=>{
+    let t = e.touches[0];
+    player.x = t.clientX;
+    player.y = t.clientY;
+});
+
+// ===== GAME LOOP =====
+function gameLoop(){
+    if(!gameRunning) return;
+
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    // MOVE PLAYER
+    if(keys["ArrowUp"]) player.y -= player.speed;
+    if(keys["ArrowDown"]) player.y += player.speed;
+    if(keys["ArrowLeft"]) player.x -= player.speed;
+    if(keys["ArrowRight"]) player.x += player.speed;
+
+    let size = player.inflated ? 70 : 40;
+
+    // DRAW PLAYER (puffer look)
+    ctx.beginPath();
+    ctx.arc(player.x, player.y, size, 0, Math.PI*2);
+    ctx.fillStyle = player.inflated ? "orange" : "yellow";
+    ctx.fill();
+
+    // SPIKES
+    if(player.inflated){
+        for(let i=0;i<20;i++){
+            let angle = i * (Math.PI*2/20);
+            ctx.beginPath();
+            ctx.moveTo(player.x, player.y);
+            ctx.lineTo(
+                player.x + Math.cos(angle)*size*1.5,
+                player.y + Math.sin(angle)*size*1.5
+            );
+            ctx.stroke();
+        }
+    }
+
+    // DRAW FISH
+    fishList.forEach((f,i)=>{
+        ctx.drawImage(f.img, f.x, f.y, f.size, f.size);
+
+        if(Math.hypot(player.x-f.x, player.y-f.y)<40){
+            coins = Number(coins) + f.value;
+            localStorage.setItem("coins", coins);
+            document.getElementById("coins").innerText = coins;
+            fishList.splice(i,1);
+            score++;
+        }
+    });
+
+    // SHARK AI
+    sharks.forEach((s,i)=>{
+        let dx = player.x - s.x;
+        let dy = player.y - s.y;
+        let dist = Math.hypot(dx,dy);
+
+        s.x += dx/dist * s.speed;
+        s.y += dy/dist * s.speed;
+
+        ctx.drawImage(s.img, s.x, s.y, s.size, s.size);
+
+        if(dist < 50){
+            die();
+        }
+    });
+
+    // BOSS SPAWN
+    if(score > 10 && !boss){
+        boss = {
+            x: canvas.width/2,
+            y: canvas.height/2,
+            size: 150,
+            hp: 20
+        };
+    }
+
+    if(boss){
+        ctx.drawImage(images.boss, boss.x, boss.y, boss.size, boss.size);
+
+        let dx = player.x - boss.x;
+        let dy = player.y - boss.y;
+        let dist = Math.hypot(dx,dy);
+
+        boss.x += dx/dist * 1.5;
+        boss.y += dy/dist * 1.5;
+
+        if(dist < 80){
+            die();
+        }
+
+        if(player.inflated && dist < 120){
+            boss.hp--;
+            if(boss.hp <= 0){
+                alert("ניצחת את הבוס!");
+                location.reload();
+            }
+        }
+    }
+
+    requestAnimationFrame(gameLoop);
+}
+
+// ===== START =====
+function startGame(){
+    document.getElementById("lobby").style.display="none";
+    gameRunning = true;
+
+    setInterval(spawnFish, 1000);
+    setInterval(spawnShark, 5000);
+
+    gameLoop();
+}
+
+// ===== SHOP =====
+function openShop(){
+    alert("חנות תגיע בקרוב 😎");
+}
+
+// ===== DIE =====
+function die(){
+    alert("נפסלת! חוזר ללובי");
+    location.reload();
+}
+</script>
+
+</body>
+</html>
