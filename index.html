@@ -65,14 +65,15 @@ function roundRect(c,x,y,w,h,r){
    SKINS
 ═══════════════════════════════════════════ */
 const SKINS = [
-  { id:'default', name:'קלסי 🐡',      price:0,  body1:'#ffe566', body2:'#ffaa00', body3:'#cc5500', spot:'#aa4400', spike:'#884400', tail:'#dd7700', fin:'#ee9900', trail:'#66ccff', glow:'rgba(255,220,80,0.22)' },
-  { id:'ocean',   name:'אוקיינוס 🌊',  price:15, body1:'#88ddff', body2:'#2299ee', body3:'#005599', spot:'#004488', spike:'#003377', tail:'#1188cc', fin:'#22aadd', trail:'#aaeeff', glow:'rgba(80,200,255,0.22)' },
-  { id:'night',   name:'לילה 🌙',      price:20, body1:'#cc99ff', body2:'#7733dd', body3:'#330077', spot:'#220055', spike:'#552299', tail:'#6622bb', fin:'#8844ee', trail:'#ddaaff', glow:'rgba(180,100,255,0.25)' },
-  { id:'emerald', name:'אמרלד 🌿',     price:25, body1:'#88ffaa', body2:'#22cc55', body3:'#006622', spot:'#004411', spike:'#115522', tail:'#11aa44', fin:'#33cc66', trail:'#aaffcc', glow:'rgba(80,255,140,0.22)' },
-  { id:'lava',    name:'לבה 🔥',       price:30, body1:'#ff9966', body2:'#ff3300', body3:'#880000', spot:'#660000', spike:'#992200', tail:'#cc2200', fin:'#ee4400', trail:'#ffaa88', glow:'rgba(255,100,50,0.25)' },
-  { id:'shadow',  name:'צל 🖤',        price:35, body1:'#999999', body2:'#555555', body3:'#222222', spot:'#333333', spike:'#444444', tail:'#3a3a3a', fin:'#666666', trail:'#cccccc', glow:'rgba(200,200,200,0.15)' },
-  { id:'rose',    name:'ורוד 🌸',      price:40, body1:'#ffbbdd', body2:'#ff66aa', body3:'#cc2277', spot:'#aa1155', spike:'#cc3388', tail:'#dd5599', fin:'#ff77bb', trail:'#ffccee', glow:'rgba(255,100,180,0.22)' },
-  { id:'golden',  name:'זהב 👑',       price:50, body1:'#fff0aa', body2:'#ffcc00', body3:'#cc8800', spot:'#886600', spike:'#aa7700', tail:'#dd9900', fin:'#ffcc22', trail:'#ffee88', glow:'rgba(255,220,0,0.3)' },
+  // glow = in-game puff halo (mid alpha), glowStrong = mini-fish/menu, glowMax = menu animated fish
+  { id:'default', name:'קלסי 🐡',      price:0,  body1:'#ffe566', body2:'#ffaa00', body3:'#cc5500', spot:'#aa4400', spike:'#884400', tail:'#dd7700', fin:'#ee9900', trail:'#66ccff', glow:'rgba(255,220,80,0.22)',   glowStrong:'rgba(255,220,80,0.3)',  glowMax:'rgba(255,220,80,0.32)' },
+  { id:'ocean',   name:'אוקיינוס 🌊',  price:15, body1:'#88ddff', body2:'#2299ee', body3:'#005599', spot:'#004488', spike:'#003377', tail:'#1188cc', fin:'#22aadd', trail:'#aaeeff', glow:'rgba(80,200,255,0.22)',   glowStrong:'rgba(80,200,255,0.3)',  glowMax:'rgba(80,200,255,0.32)' },
+  { id:'night',   name:'לילה 🌙',      price:20, body1:'#cc99ff', body2:'#7733dd', body3:'#330077', spot:'#220055', spike:'#552299', tail:'#6622bb', fin:'#8844ee', trail:'#ddaaff', glow:'rgba(180,100,255,0.25)',  glowStrong:'rgba(180,100,255,0.35)', glowMax:'rgba(180,100,255,0.35)' },
+  { id:'emerald', name:'אמרלד 🌿',     price:25, body1:'#88ffaa', body2:'#22cc55', body3:'#006622', spot:'#004411', spike:'#115522', tail:'#11aa44', fin:'#33cc66', trail:'#aaffcc', glow:'rgba(80,255,140,0.22)',   glowStrong:'rgba(80,255,140,0.3)',  glowMax:'rgba(80,255,140,0.32)' },
+  { id:'lava',    name:'לבה 🔥',       price:30, body1:'#ff9966', body2:'#ff3300', body3:'#880000', spot:'#660000', spike:'#992200', tail:'#cc2200', fin:'#ee4400', trail:'#ffaa88', glow:'rgba(255,100,50,0.25)',   glowStrong:'rgba(255,100,50,0.35)', glowMax:'rgba(255,100,50,0.35)' },
+  { id:'shadow',  name:'צל 🖤',        price:35, body1:'#999999', body2:'#555555', body3:'#222222', spot:'#333333', spike:'#444444', tail:'#3a3a3a', fin:'#666666', trail:'#cccccc', glow:'rgba(200,200,200,0.15)',  glowStrong:'rgba(200,200,200,0.2)', glowMax:'rgba(200,200,200,0.2)' },
+  { id:'rose',    name:'ורוד 🌸',      price:40, body1:'#ffbbdd', body2:'#ff66aa', body3:'#cc2277', spot:'#aa1155', spike:'#cc3388', tail:'#dd5599', fin:'#ff77bb', trail:'#ffccee', glow:'rgba(255,100,180,0.22)',  glowStrong:'rgba(255,100,180,0.3)', glowMax:'rgba(255,100,180,0.32)' },
+  { id:'golden',  name:'זהב 👑',       price:50, body1:'#fff0aa', body2:'#ffcc00', body3:'#cc8800', spot:'#886600', spike:'#aa7700', tail:'#dd9900', fin:'#ffcc22', trail:'#ffee88', glow:'rgba(255,220,0,0.3)',    glowStrong:'rgba(255,220,0,0.4)',   glowMax:'rgba(255,220,0,0.4)' },
 ];
 
 /* ═══════════════════════════════════════════
@@ -91,7 +92,7 @@ function saveData() {
 }
 function loadData() {
   try {
-    wallet = parseInt(localStorage.getItem('pf_wallet'))||0;
+    wallet = parseInt(localStorage.getItem('pf_wallet'), 10)||0;
     ownedSkins = JSON.parse(localStorage.getItem('pf_owned'))||['default'];
     activeSkinId = localStorage.getItem('pf_skin')||'default';
   } catch(e) { wallet=0; ownedSkins=['default']; activeSkinId='default'; }
@@ -179,7 +180,7 @@ class CoinParticle {
     ctx.strokeStyle='#aa8800'; ctx.lineWidth=1.2; ctx.stroke();
     ctx.fillStyle='#886600'; ctx.font=`bold ${this.r*1.4}px Arial`;
     ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillText('₪',this.x,this.y);
+    ctx.fillText('🪙',this.x,this.y);
     ctx.restore();
   }
   get dead(){ return this.life<=0; }
@@ -429,7 +430,7 @@ function drawMiniPuffer(cx,cy,R,sk,puffed=true,facing=1){
   // glow
   if(puffed){
     const gr=ctx.createRadialGradient(0,0,R*0.3,0,0,R*1.7);
-    gr.addColorStop(0,sk.glow.replace('0.22','0.3')); gr.addColorStop(1,'transparent');
+    gr.addColorStop(0,sk.glowStrong); gr.addColorStop(1,'transparent');
     ctx.beginPath(); ctx.arc(0,0,R*1.7,0,Math.PI*2); ctx.fillStyle=gr; ctx.fill();
   }
   // body
@@ -1048,7 +1049,7 @@ function drawMenu(){
   const sk=getSkin();
   ctx.save(); ctx.translate(W/2,148+bob);
   const glr=ctx.createRadialGradient(0,0,R*0.4,0,0,R*2);
-  glr.addColorStop(0,sk.glow.replace('0.22','0.32')); glr.addColorStop(1,'transparent');
+  glr.addColorStop(0,sk.glowMax); glr.addColorStop(1,'transparent');
   ctx.beginPath(); ctx.arc(0,0,R*2,0,Math.PI*2); ctx.fillStyle=glr; ctx.fill();
   const bg2=ctx.createRadialGradient(-R*0.25,-R*0.3,0,0,0,R);
   bg2.addColorStop(0,sk.body1); bg2.addColorStop(0.45,sk.body2); bg2.addColorStop(1,sk.body3);
@@ -1299,7 +1300,7 @@ function drawWin(){
 ═══════════════════════════════════════════ */
 // Layout constants
 const SHOP_PX=50, SHOP_PY=15, SHOP_PW=800, SHOP_PH=570;
-const CARD_W=175, CARD_H=188, CARD_GAP=14;
+const CARD_W=175, CARD_H=188, CARD_GAP=14, GRID_COLS=4;
 const GRID_X=SHOP_PX+16, GRID_Y=SHOP_PY+95;
 
 let shopScroll=0;
@@ -1307,7 +1308,7 @@ const shopCardRects=[]; // {x,y,w,h,skinIdx} for click detection
 const shopBackBtn={x:0,y:0,w:0,h:0};
 
 function getCardRect(idx){
-  const col=idx%4, row=Math.floor(idx/4);
+  const col=idx%GRID_COLS, row=Math.floor(idx/GRID_COLS);
   return {
     x: GRID_X+col*(CARD_W+CARD_GAP),
     y: GRID_Y+row*(CARD_H+CARD_GAP),
