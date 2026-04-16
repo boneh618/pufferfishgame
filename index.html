@@ -1,227 +1,301 @@
 <!DOCTYPE html>
-<html>
+<html lang="he">
 <head>
 <meta charset="UTF-8">
-<title>Puffer Fish Game</title>
+<title>Fish Evolution Game</title>
+
 <style>
-body{
-  margin:0;
-  background:#001d3d;
-  display:flex;
-  justify-content:center;
-  align-items:center;
-  height:100vh;
+body {
+  margin: 0;
+  overflow: hidden;
+  background: radial-gradient(circle at center, #0b3a55, #020b12);
+  font-family: Arial;
 }
-canvas{
-  border-radius:16px;
-  box-shadow:0 0 40px rgba(0,150,255,0.6);
+
+canvas {
+  display: block;
 }
 </style>
 </head>
 
 <body>
-<canvas id="c" width="900" height="600"></canvas>
+<canvas id="game"></canvas>
 
 <script>
-const c=document.getElementById("c");
-const ctx=c.getContext("2d");
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
 
-let keys={};
-onkeydown=e=>keys[e.key]=true;
-onkeyup=e=>keys[e.key]=false;
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
 
-const rnd=(a,b)=>Math.random()*(b-a)+a;
+// ===== PLAYER (דג הבלון) =====
+let player = {
+  x: canvas.width/2,
+  y: canvas.height/2,
+  vx: 0,
+  vy: 0,
+  r: 22,
+  coins: 0
+};
 
-// 🌊 bubbles
-let bubbles=[];
+// ===== ENTITIES =====
+let fish = [];
+let enemies = [];
+let bubbles = [];
+let boss = null;
 
-function spawnBubble(x,y){
-  bubbles.push({x,y,r:3,life:60});
-}
+// ===== INPUT =====
+let keys = {};
+document.addEventListener("keydown", e => keys[e.key] = true);
+document.addEventListener("keyup", e => keys[e.key] = false);
 
-// 🐡 PLAYER
-class Player{
-  constructor(){
-    this.x=450;
-    this.y=300;
-    this.r=20;
-    this.energy=100;
-    this.t=0;
-  }
-
-  update(){
-    this.t+=0.1;
-
-    let speed=3;
-
-    if(keys["a"]||keys["ArrowLeft"]) this.x-=speed;
-    if(keys["d"]||keys["ArrowRight"]) this.x+=speed;
-    if(keys["w"]||keys["ArrowUp"]) this.y-=speed;
-    if(keys["s"]||keys["ArrowDown"]) this.y+=speed;
-
-    spawnBubble(this.x-10,this.y);
-  }
-
-  draw(){
-    let tailWave=Math.sin(this.t)*5;
-
-    // גוף
-    ctx.fillStyle="#ffb703";
-    ctx.beginPath();
-    ctx.arc(this.x,this.y,this.r,0,Math.PI*2);
-    ctx.fill();
-
-    // קוצים
-    for(let i=0;i<16;i++){
-      let a=i*(Math.PI*2/16);
-      ctx.beginPath();
-      ctx.moveTo(this.x,this.y);
-      ctx.lineTo(this.x+Math.cos(a)*(this.r+8),this.y+Math.sin(a)*(this.r+8));
-      ctx.strokeStyle="#fb8500";
-      ctx.stroke();
-    }
-
-    // עין
-    ctx.fillStyle="white";
-    ctx.beginPath();
-    ctx.arc(this.x+6,this.y-4,4,0,Math.PI*2);
-    ctx.fill();
-
-    ctx.fillStyle="black";
-    ctx.beginPath();
-    ctx.arc(this.x+7,this.y-4,2,0,Math.PI*2);
-    ctx.fill();
-
-    // זנב (אנימציה!)
-    ctx.fillStyle="#fb8500";
-    ctx.beginPath();
-    ctx.moveTo(this.x-this.r,this.y);
-    ctx.lineTo(this.x-this.r-12,this.y+tailWave);
-    ctx.lineTo(this.x-this.r-12,this.y-tailWave);
-    ctx.fill();
-  }
-}
-
-// 🐟 FISH
-class Fish{
-  constructor(){
-    this.x=rnd(0,900);
-    this.y=rnd(0,600);
-    this.speed=rnd(1,2);
-  }
-
-  update(){
-    this.x+=this.speed;
-    if(this.x>920)this.x=-20;
-  }
-
-  draw(){
-    ctx.fillStyle="yellow";
-    ctx.beginPath();
-    ctx.ellipse(this.x,this.y,10,6,0,0,Math.PI*2);
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.moveTo(this.x-10,this.y);
-    ctx.lineTo(this.x-18,this.y-6);
-    ctx.lineTo(this.x-18,this.y+6);
-    ctx.fill();
-  }
-}
-
-// 🦈 CHASING SHARK
-class Shark{
-  constructor(){
-    this.x=rnd(0,900);
-    this.y=rnd(0,600);
-    this.speed=1.5;
-  }
-
-  update(){
-    let dx=player.x-this.x;
-    let dy=player.y-this.y;
-    let d=Math.hypot(dx,dy);
-
-    this.x+=dx/d*this.speed;
-    this.y+=dy/d*this.speed;
-  }
-
-  draw(){
-    ctx.fillStyle="gray";
-    ctx.beginPath();
-    ctx.ellipse(this.x,this.y,30,15,0,0,Math.PI*2);
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.moveTo(this.x,this.y-15);
-    ctx.lineTo(this.x+10,this.y-35);
-    ctx.lineTo(this.x+20,this.y-15);
-    ctx.fill();
-  }
-}
-
-let player=new Player();
-let fishes=Array.from({length:10},()=>new Fish());
-let sharks=Array.from({length:3},()=>new Shark());
-
-function drawBackground(){
-  let g=ctx.createLinearGradient(0,0,0,600);
-  g.addColorStop(0,"#003566");
-  g.addColorStop(1,"#001d3d");
-  ctx.fillStyle=g;
-  ctx.fillRect(0,0,900,600);
-}
-
-function updateBubbles(){
-  bubbles.forEach(b=>{
-    b.y-=1;
-    b.life--;
-  });
-  bubbles=bubbles.filter(b=>b.life>0);
-}
-
-function drawBubbles(){
-  ctx.fillStyle="rgba(200,240,255,0.6)";
-  bubbles.forEach(b=>{
-    ctx.beginPath();
-    ctx.arc(b.x,b.y,b.r,0,Math.PI*2);
-    ctx.fill();
+// ===== FISH =====
+function spawnFish() {
+  fish.push({
+    x: Math.random() * canvas.width,
+    y: Math.random() * canvas.height,
+    angle: Math.random() * Math.PI * 2,
+    speed: 0.5 + Math.random()*0.5,
+    value: Math.floor(Math.random()*10)+1
   });
 }
 
-function loop(){
-  drawBackground();
+for (let i = 0; i < 18; i++) spawnFish();
 
-  updateBubbles();
-  drawBubbles();
+// ===== ENEMIES (כרישים) =====
+function spawnEnemy() {
+  enemies.push({
+    x: Math.random() * canvas.width,
+    y: Math.random() * canvas.height,
+    speed: 1 + Math.random()*0.5,
+    wobble: Math.random()*1000
+  });
+}
 
-  player.update();
-  player.draw();
+for (let i = 0; i < 5; i++) spawnEnemy();
 
-  fishes.forEach(f=>{
-    f.update();
-    f.draw();
+// ===== BUBBLES =====
+function spawnBubble() {
+  bubbles.push({
+    x: Math.random() * canvas.width,
+    y: canvas.height + 10,
+    speed: 1 + Math.random()*2,
+    size: 2 + Math.random()*4
+  });
+}
 
-    if(Math.hypot(player.x-f.x,player.y-f.y)<20){
-      f.x=rnd(0,900);
-      f.y=rnd(0,600);
+// ===== BOSS =====
+function spawnBoss() {
+  boss = {
+    x: 100,
+    y: 100,
+    r: 60,
+    hp: 120
+  };
+}
+
+// ===== DRAW FISH (אמיתי יותר) =====
+function drawFish(f) {
+  ctx.save();
+  ctx.translate(f.x, f.y);
+  ctx.rotate(f.angle);
+
+  // גוף
+  ctx.fillStyle = "#ffd166";
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 14, 9, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  // זנב
+  ctx.fillStyle = "#ffb703";
+  ctx.beginPath();
+  ctx.moveTo(-14, 0);
+  ctx.lineTo(-25, -8);
+  ctx.lineTo(-25, 8);
+  ctx.closePath();
+  ctx.fill();
+
+  // עין
+  ctx.fillStyle = "black";
+  ctx.beginPath();
+  ctx.arc(6, -2, 2, 0, Math.PI*2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+// ===== DRAW SHARK (אויב) =====
+function drawEnemy(e) {
+  ctx.save();
+  ctx.translate(e.x, e.y);
+
+  ctx.fillStyle = "#8ecae6";
+
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 18, 10, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  // סנפיר
+  ctx.beginPath();
+  ctx.moveTo(-5, -10);
+  ctx.lineTo(0, -20);
+  ctx.lineTo(5, -10);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+// ===== INPUT MOVEMENT =====
+function updatePlayer() {
+  let accel = 0.6;
+
+  if (keys["ArrowUp"]) player.vy -= accel;
+  if (keys["ArrowDown"]) player.vy += accel;
+  if (keys["ArrowLeft"]) player.vx -= accel;
+  if (keys["ArrowRight"]) player.vx += accel;
+
+  player.vx *= 0.92;
+  player.vy *= 0.92;
+
+  player.x += player.vx;
+  player.y += player.vy;
+}
+
+// ===== UPDATE =====
+function update() {
+
+  updatePlayer();
+
+  // fish movement (שחייה טבעית)
+  fish.forEach(f => {
+    f.angle += 0.02;
+    f.x += Math.cos(f.angle) * f.speed;
+    f.y += Math.sin(f.angle) * f.speed;
+  });
+
+  // enemy chase
+  enemies.forEach(e => {
+    let dx = player.x - e.x;
+    let dy = player.y - e.y;
+    let d = Math.sqrt(dx*dx + dy*dy);
+
+    e.x += dx/d * e.speed;
+    e.y += dy/d * e.speed;
+
+    if (d < 25) {
+      player.coins = 0;
+      player.x = canvas.width/2;
+      player.y = canvas.height/2;
     }
   });
 
-  sharks.forEach(s=>{
-    s.update();
-    s.draw();
+  // eat fish
+  for (let i = 0; i < fish.length; i++) {
+    let f = fish[i];
+    let dx = player.x - f.x;
+    let dy = player.y - f.y;
+    let d = Math.sqrt(dx*dx + dy*dy);
 
-    if(Math.hypot(player.x-s.x,player.y-s.y)<35){
-      alert("💀 Game Over");
-      location.reload();
+    if (d < 25) {
+      player.coins += f.value;
+      fish.splice(i,1);
+      spawnFish();
+      break;
     }
+  }
+
+  // bubbles
+  if (Math.random() < 0.1) spawnBubble();
+
+  bubbles.forEach(b => {
+    b.y -= b.speed;
   });
 
+  bubbles = bubbles.filter(b => b.y > -20);
+
+  // boss spawn
+  if (player.coins > 60 && !boss) spawnBoss();
+
+  if (boss) {
+    let dx = player.x - boss.x;
+    let dy = player.y - boss.y;
+    let d = Math.sqrt(dx*dx + dy*dy);
+
+    boss.x += dx/d * 1.2;
+    boss.y += dy/d * 1.2;
+  }
+}
+
+// ===== DRAW =====
+function draw() {
+
+  // מים עם עומק
+  let g = ctx.createRadialGradient(
+    canvas.width/2, canvas.height/2, 50,
+    canvas.width/2, canvas.height/2, canvas.width
+  );
+
+  g.addColorStop(0, "#0f4c75");
+  g.addColorStop(1, "#020b12");
+
+  ctx.fillStyle = g;
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  // bubbles
+  ctx.fillStyle = "rgba(255,255,255,0.3)";
+  bubbles.forEach(b => {
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.size, 0, Math.PI*2);
+    ctx.fill();
+  });
+
+  // fish
+  fish.forEach(drawFish);
+
+  // enemies
+  enemies.forEach(drawEnemy);
+
+  // boss
+  if (boss) {
+    ctx.fillStyle = "purple";
+    ctx.beginPath();
+    ctx.arc(boss.x, boss.y, boss.r, 0, Math.PI*2);
+    ctx.fill();
+
+    // glow
+    ctx.strokeStyle = "rgba(180,0,255,0.4)";
+    ctx.lineWidth = 8;
+    ctx.stroke();
+  }
+
+  // player (דג הבלון משופר)
+  ctx.fillStyle = "#ff9f1c";
+  ctx.beginPath();
+  ctx.arc(player.x, player.y, player.r, 0, Math.PI*2);
+  ctx.fill();
+
+  // עין
+  ctx.fillStyle = "black";
+  ctx.beginPath();
+  ctx.arc(player.x+6, player.y-3, 3, 0, Math.PI*2);
+  ctx.fill();
+
+  // UI
+  ctx.fillStyle = "white";
+  ctx.font = "20px Arial";
+  ctx.fillText("Coins: " + player.coins, 20, 30);
+  ctx.fillText("Fish World 🌊", 20, 60);
+}
+
+// ===== LOOP =====
+function loop() {
+  update();
+  draw();
   requestAnimationFrame(loop);
 }
 
 loop();
 </script>
+
 </body>
 </html>
