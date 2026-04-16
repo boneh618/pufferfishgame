@@ -7,7 +7,7 @@
 <style>
 body{
   margin:0;
-  background:#000814;
+  background:linear-gradient(#001d3d,#003566);
   display:flex;
   justify-content:center;
   align-items:center;
@@ -21,14 +21,14 @@ body{
 
 canvas{
   border-radius:16px;
-  box-shadow:0 0 40px rgba(0,150,255,0.5);
+  box-shadow:0 0 50px rgba(0,150,255,0.6);
 }
 
 #menu{
   position:absolute;
   top:0;left:0;
   width:100%;height:100%;
-  background:rgba(0,0,0,0.7);
+  background:rgba(0,0,0,0.75);
   color:white;
   display:flex;
   flex-direction:column;
@@ -39,23 +39,32 @@ canvas{
 }
 
 #menu h1{
-  font-size:40px;
+  font-size:42px;
+  margin-bottom:10px;
 }
 
 #menu p{
-  max-width:600px;
-  line-height:1.6;
-  margin:10px 0;
+  max-width:650px;
+  line-height:1.7;
+  margin:8px 0;
+  font-size:18px;
 }
 
 button{
-  padding:12px 20px;
-  font-size:18px;
+  margin-top:15px;
+  padding:14px 24px;
+  font-size:20px;
   border:none;
-  border-radius:10px;
-  background:#00aaff;
+  border-radius:12px;
+  background:#00b4d8;
   color:white;
   cursor:pointer;
+  transition:0.2s;
+}
+
+button:hover{
+  transform:scale(1.05);
+  background:#48cae4;
 }
 </style>
 </head>
@@ -67,25 +76,19 @@ button{
 <div id="menu">
   <h1>🐡 דג הבלון</h1>
 
-  <p>
-  🎯 המטרה: לאכול דגים קטנים ולהשיג נקודות  
-  </p>
+  <p>🎯 <b>המטרה:</b> לאכול דגים קטנים ולהשיג נקודות</p>
+
+  <p>⚠️ <b>זהירות:</b> כרישים 🦈 ולווייתנים 🐋 יהרגו אותך</p>
 
   <p>
-  ⚠️ להימנע מאויבים: כרישים 🦈, דגי פנס 🎣 ולווייתנים 🐋  
+  💨 <b>יכולת מיוחדת:</b>  
+  לחץ SPACE כדי להתנפח → אתה מוציא רעל ☠️  
+  אבל זז יותר לאט!
   </p>
 
-  <p>
-  💨 לחץ SPACE כדי להתנפח  
-  בזמן התנפחות אתה מוציא רעל שפוגע באויבים  
-  אבל אתה זז לאט יותר!
-  </p>
+  <p>🕹️ תזוזה: WASD או חצים</p>
 
-  <p>
-  🕹️ תזוזה: WASD / חצים  
-  </p>
-
-  <button onclick="startGame()">התחל</button>
+  <button onclick="startGame()">▶ התחל לשחק</button>
 </div>
 
 </div>
@@ -110,42 +113,46 @@ class Player{
   }
 
   update(){
-    if(keys["ArrowLeft"]||keys["a"]) this.x-=this.speed;
-    if(keys["ArrowRight"]||keys["d"]) this.x+=this.speed;
-    if(keys["ArrowUp"]||keys["w"]) this.y-=this.speed;
-    if(keys["ArrowDown"]||keys["s"]) this.y+=this.speed;
+    let currentSpeed = this.puffed ? 1.8 : 3;
 
-    this.puffed=keys[" "];
+    if(keys["ArrowLeft"]||keys["a"]) this.x-=currentSpeed;
+    if(keys["ArrowRight"]||keys["d"]) this.x+=currentSpeed;
+    if(keys["ArrowUp"]||keys["w"]) this.y-=currentSpeed;
+    if(keys["ArrowDown"]||keys["s"]) this.y+=currentSpeed;
+
+    this.puffed = keys[" "] && this.energy > 0;
 
     if(this.puffed){
-      this.energy-=0.5;
-      if(Math.random()<0.3){
+      this.energy -= 0.6;
+
+      if(Math.random()<0.25){
         this.poison.push({
           x:this.x,
           y:this.y,
-          r:10,
-          life:40
+          r:8,
+          life:50
         });
       }
     }else{
-      this.energy=Math.min(100,this.energy+0.3);
+      this.energy = Math.min(100,this.energy+0.4);
     }
 
     this.poison.forEach(p=>{
       p.life--;
-      p.r+=0.3;
+      p.r+=0.4;
     });
-    this.poison=this.poison.filter(p=>p.life>0);
+
+    this.poison = this.poison.filter(p=>p.life>0);
   }
 
   draw(){
     ctx.fillStyle="orange";
     ctx.beginPath();
-    ctx.arc(this.x,this.y,this.r+(this.puffed?10:0),0,Math.PI*2);
+    ctx.arc(this.x,this.y,this.r+(this.puffed?12:0),0,Math.PI*2);
     ctx.fill();
 
     this.poison.forEach(p=>{
-      ctx.globalAlpha=p.life/40;
+      ctx.globalAlpha=p.life/50;
       ctx.fillStyle="lime";
       ctx.beginPath();
       ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
@@ -157,10 +164,15 @@ class Player{
 
 class Fish{
   constructor(){
+    this.respawn();
+  }
+
+  respawn(){
     this.x=rnd(0,900);
     this.y=rnd(0,600);
     this.r=10;
   }
+
   draw(){
     ctx.fillStyle="yellow";
     ctx.beginPath();
@@ -171,10 +183,15 @@ class Fish{
 
 class Shark{
   constructor(){
+    this.respawn();
+  }
+
+  respawn(){
     this.x=rnd(0,900);
     this.y=rnd(0,600);
     this.r=25;
   }
+
   draw(){
     ctx.fillStyle="gray";
     ctx.beginPath();
@@ -185,12 +202,17 @@ class Shark{
 
 class Whale{
   constructor(){
+    this.respawn();
+  }
+
+  respawn(){
     this.x=rnd(0,900);
     this.y=rnd(0,600);
     this.r=50;
   }
+
   draw(){
-    ctx.fillStyle="blue";
+    ctx.fillStyle="#0077b6";
     ctx.beginPath();
     ctx.arc(this.x,this.y,this.r,0,Math.PI*2);
     ctx.fill();
@@ -208,9 +230,11 @@ function startGame(){
   gameRunning=true;
 
   player=new Player();
-  fishes=Array.from({length:10},()=>new Fish());
+  fishes=Array.from({length:12},()=>new Fish());
   sharks=Array.from({length:3},()=>new Shark());
   whales=Array.from({length:1},()=>new Whale());
+
+  score=0;
 
   loop();
 }
@@ -225,39 +249,55 @@ function loop(){
 
   fishes.forEach(f=>{
     f.draw();
-    if(Math.hypot(player.x-f.x,player.y-f.y)<20){
+    if(Math.hypot(player.x-f.x,player.y-f.y)<25){
       score+=10;
-      f.x=rnd(0,900);
-      f.y=rnd(0,600);
+      f.respawn();
     }
   });
 
   sharks.forEach(s=>{
     s.draw();
-    if(Math.hypot(player.x-s.x,player.y-s.y)<40){
-      alert("הפסדת!");
-      location.reload();
+    if(Math.hypot(player.x-s.x,player.y-s.y)<45){
+      gameOver("ננשכת ע\"י כריש!");
     }
   });
 
   whales.forEach(w=>{
     w.draw();
-    if(Math.hypot(player.x-w.x,player.y-w.y)<60){
-      alert("לווייתן פגע בך!");
-      location.reload();
+    if(Math.hypot(player.x-w.x,player.y-w.y)<65){
+      gameOver("לווייתן מחץ אותך!");
     }
   });
 
-  ctx.fillStyle="white";
-  ctx.fillText("Score: "+score,20,20);
+  drawUI();
 
   requestAnimationFrame(loop);
 }
 
+function drawUI(){
+  ctx.fillStyle="white";
+  ctx.font="16px Arial";
+  ctx.fillText("Score: "+score,20,25);
+
+  ctx.fillStyle="red";
+  ctx.fillRect(20,35,100,10);
+
+  ctx.fillStyle="lime";
+  ctx.fillRect(20,35,player.energy,10);
+
+  ctx.strokeStyle="white";
+  ctx.strokeRect(20,35,100,10);
+}
+
+function gameOver(text){
+  alert(text);
+  location.reload();
+}
+
 let keys={};
+
 window.addEventListener("keydown",e=>keys[e.key]=true);
 window.addEventListener("keyup",e=>keys[e.key]=false);
-
 </script>
 </body>
 </html>
