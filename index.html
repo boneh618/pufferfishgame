@@ -1,303 +1,227 @@
 <!DOCTYPE html>
-<html lang="he" dir="rtl">
+<html>
 <head>
 <meta charset="UTF-8">
-<title>🐡 דג הבלון</title>
-
+<title>Puffer Fish Game</title>
 <style>
 body{
   margin:0;
-  background:linear-gradient(#001d3d,#003566);
+  background:#001d3d;
   display:flex;
   justify-content:center;
   align-items:center;
   height:100vh;
-  font-family:Arial;
 }
-
-#wrapper{
-  position:relative;
-}
-
 canvas{
   border-radius:16px;
-  box-shadow:0 0 50px rgba(0,150,255,0.6);
-}
-
-#menu{
-  position:absolute;
-  top:0;left:0;
-  width:100%;height:100%;
-  background:rgba(0,0,0,0.75);
-  color:white;
-  display:flex;
-  flex-direction:column;
-  justify-content:center;
-  align-items:center;
-  text-align:center;
-  padding:20px;
-}
-
-#menu h1{
-  font-size:42px;
-  margin-bottom:10px;
-}
-
-#menu p{
-  max-width:650px;
-  line-height:1.7;
-  margin:8px 0;
-  font-size:18px;
-}
-
-button{
-  margin-top:15px;
-  padding:14px 24px;
-  font-size:20px;
-  border:none;
-  border-radius:12px;
-  background:#00b4d8;
-  color:white;
-  cursor:pointer;
-  transition:0.2s;
-}
-
-button:hover{
-  transform:scale(1.05);
-  background:#48cae4;
+  box-shadow:0 0 40px rgba(0,150,255,0.6);
 }
 </style>
 </head>
 
 <body>
-<div id="wrapper">
-<canvas id="game" width="900" height="600"></canvas>
-
-<div id="menu">
-  <h1>🐡 דג הבלון</h1>
-
-  <p>🎯 <b>המטרה:</b> לאכול דגים קטנים ולהשיג נקודות</p>
-
-  <p>⚠️ <b>זהירות:</b> כרישים 🦈 ולווייתנים 🐋 יהרגו אותך</p>
-
-  <p>
-  💨 <b>יכולת מיוחדת:</b>  
-  לחץ SPACE כדי להתנפח → אתה מוציא רעל ☠️  
-  אבל זז יותר לאט!
-  </p>
-
-  <p>🕹️ תזוזה: WASD או חצים</p>
-
-  <button onclick="startGame()">▶ התחל לשחק</button>
-</div>
-
-</div>
+<canvas id="c" width="900" height="600"></canvas>
 
 <script>
-const canvas=document.getElementById("game");
-const ctx=canvas.getContext("2d");
+const c=document.getElementById("c");
+const ctx=c.getContext("2d");
 
-let gameRunning=false;
+let keys={};
+onkeydown=e=>keys[e.key]=true;
+onkeyup=e=>keys[e.key]=false;
 
 const rnd=(a,b)=>Math.random()*(b-a)+a;
 
+// 🌊 bubbles
+let bubbles=[];
+
+function spawnBubble(x,y){
+  bubbles.push({x,y,r:3,life:60});
+}
+
+// 🐡 PLAYER
 class Player{
   constructor(){
     this.x=450;
     this.y=300;
     this.r=20;
-    this.speed=3;
     this.energy=100;
-    this.puffed=false;
-    this.poison=[];
+    this.t=0;
   }
 
   update(){
-    let currentSpeed = this.puffed ? 1.8 : 3;
+    this.t+=0.1;
 
-    if(keys["ArrowLeft"]||keys["a"]) this.x-=currentSpeed;
-    if(keys["ArrowRight"]||keys["d"]) this.x+=currentSpeed;
-    if(keys["ArrowUp"]||keys["w"]) this.y-=currentSpeed;
-    if(keys["ArrowDown"]||keys["s"]) this.y+=currentSpeed;
+    let speed=3;
 
-    this.puffed = keys[" "] && this.energy > 0;
+    if(keys["a"]||keys["ArrowLeft"]) this.x-=speed;
+    if(keys["d"]||keys["ArrowRight"]) this.x+=speed;
+    if(keys["w"]||keys["ArrowUp"]) this.y-=speed;
+    if(keys["s"]||keys["ArrowDown"]) this.y+=speed;
 
-    if(this.puffed){
-      this.energy -= 0.6;
-
-      if(Math.random()<0.25){
-        this.poison.push({
-          x:this.x,
-          y:this.y,
-          r:8,
-          life:50
-        });
-      }
-    }else{
-      this.energy = Math.min(100,this.energy+0.4);
-    }
-
-    this.poison.forEach(p=>{
-      p.life--;
-      p.r+=0.4;
-    });
-
-    this.poison = this.poison.filter(p=>p.life>0);
+    spawnBubble(this.x-10,this.y);
   }
 
   draw(){
-    ctx.fillStyle="orange";
+    let tailWave=Math.sin(this.t)*5;
+
+    // גוף
+    ctx.fillStyle="#ffb703";
     ctx.beginPath();
-    ctx.arc(this.x,this.y,this.r+(this.puffed?12:0),0,Math.PI*2);
+    ctx.arc(this.x,this.y,this.r,0,Math.PI*2);
     ctx.fill();
 
-    this.poison.forEach(p=>{
-      ctx.globalAlpha=p.life/50;
-      ctx.fillStyle="lime";
+    // קוצים
+    for(let i=0;i<16;i++){
+      let a=i*(Math.PI*2/16);
       ctx.beginPath();
-      ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
-      ctx.fill();
-      ctx.globalAlpha=1;
-    });
+      ctx.moveTo(this.x,this.y);
+      ctx.lineTo(this.x+Math.cos(a)*(this.r+8),this.y+Math.sin(a)*(this.r+8));
+      ctx.strokeStyle="#fb8500";
+      ctx.stroke();
+    }
+
+    // עין
+    ctx.fillStyle="white";
+    ctx.beginPath();
+    ctx.arc(this.x+6,this.y-4,4,0,Math.PI*2);
+    ctx.fill();
+
+    ctx.fillStyle="black";
+    ctx.beginPath();
+    ctx.arc(this.x+7,this.y-4,2,0,Math.PI*2);
+    ctx.fill();
+
+    // זנב (אנימציה!)
+    ctx.fillStyle="#fb8500";
+    ctx.beginPath();
+    ctx.moveTo(this.x-this.r,this.y);
+    ctx.lineTo(this.x-this.r-12,this.y+tailWave);
+    ctx.lineTo(this.x-this.r-12,this.y-tailWave);
+    ctx.fill();
   }
 }
 
+// 🐟 FISH
 class Fish{
   constructor(){
-    this.respawn();
-  }
-
-  respawn(){
     this.x=rnd(0,900);
     this.y=rnd(0,600);
-    this.r=10;
+    this.speed=rnd(1,2);
+  }
+
+  update(){
+    this.x+=this.speed;
+    if(this.x>920)this.x=-20;
   }
 
   draw(){
     ctx.fillStyle="yellow";
     ctx.beginPath();
-    ctx.arc(this.x,this.y,this.r,0,Math.PI*2);
+    ctx.ellipse(this.x,this.y,10,6,0,0,Math.PI*2);
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(this.x-10,this.y);
+    ctx.lineTo(this.x-18,this.y-6);
+    ctx.lineTo(this.x-18,this.y+6);
     ctx.fill();
   }
 }
 
+// 🦈 CHASING SHARK
 class Shark{
   constructor(){
-    this.respawn();
-  }
-
-  respawn(){
     this.x=rnd(0,900);
     this.y=rnd(0,600);
-    this.r=25;
+    this.speed=1.5;
+  }
+
+  update(){
+    let dx=player.x-this.x;
+    let dy=player.y-this.y;
+    let d=Math.hypot(dx,dy);
+
+    this.x+=dx/d*this.speed;
+    this.y+=dy/d*this.speed;
   }
 
   draw(){
     ctx.fillStyle="gray";
     ctx.beginPath();
-    ctx.arc(this.x,this.y,this.r,0,Math.PI*2);
+    ctx.ellipse(this.x,this.y,30,15,0,0,Math.PI*2);
     ctx.fill();
-  }
-}
 
-class Whale{
-  constructor(){
-    this.respawn();
-  }
-
-  respawn(){
-    this.x=rnd(0,900);
-    this.y=rnd(0,600);
-    this.r=50;
-  }
-
-  draw(){
-    ctx.fillStyle="#0077b6";
     ctx.beginPath();
-    ctx.arc(this.x,this.y,this.r,0,Math.PI*2);
+    ctx.moveTo(this.x,this.y-15);
+    ctx.lineTo(this.x+10,this.y-35);
+    ctx.lineTo(this.x+20,this.y-15);
     ctx.fill();
   }
 }
 
-let player;
-let fishes=[];
-let sharks=[];
-let whales=[];
-let score=0;
+let player=new Player();
+let fishes=Array.from({length:10},()=>new Fish());
+let sharks=Array.from({length:3},()=>new Shark());
 
-function startGame(){
-  document.getElementById("menu").style.display="none";
-  gameRunning=true;
+function drawBackground(){
+  let g=ctx.createLinearGradient(0,0,0,600);
+  g.addColorStop(0,"#003566");
+  g.addColorStop(1,"#001d3d");
+  ctx.fillStyle=g;
+  ctx.fillRect(0,0,900,600);
+}
 
-  player=new Player();
-  fishes=Array.from({length:12},()=>new Fish());
-  sharks=Array.from({length:3},()=>new Shark());
-  whales=Array.from({length:1},()=>new Whale());
+function updateBubbles(){
+  bubbles.forEach(b=>{
+    b.y-=1;
+    b.life--;
+  });
+  bubbles=bubbles.filter(b=>b.life>0);
+}
 
-  score=0;
-
-  loop();
+function drawBubbles(){
+  ctx.fillStyle="rgba(200,240,255,0.6)";
+  bubbles.forEach(b=>{
+    ctx.beginPath();
+    ctx.arc(b.x,b.y,b.r,0,Math.PI*2);
+    ctx.fill();
+  });
 }
 
 function loop(){
-  if(!gameRunning)return;
+  drawBackground();
 
-  ctx.clearRect(0,0,900,600);
+  updateBubbles();
+  drawBubbles();
 
   player.update();
   player.draw();
 
   fishes.forEach(f=>{
+    f.update();
     f.draw();
-    if(Math.hypot(player.x-f.x,player.y-f.y)<25){
-      score+=10;
-      f.respawn();
+
+    if(Math.hypot(player.x-f.x,player.y-f.y)<20){
+      f.x=rnd(0,900);
+      f.y=rnd(0,600);
     }
   });
 
   sharks.forEach(s=>{
+    s.update();
     s.draw();
-    if(Math.hypot(player.x-s.x,player.y-s.y)<45){
-      gameOver("ננשכת ע\"י כריש!");
+
+    if(Math.hypot(player.x-s.x,player.y-s.y)<35){
+      alert("💀 Game Over");
+      location.reload();
     }
   });
-
-  whales.forEach(w=>{
-    w.draw();
-    if(Math.hypot(player.x-w.x,player.y-w.y)<65){
-      gameOver("לווייתן מחץ אותך!");
-    }
-  });
-
-  drawUI();
 
   requestAnimationFrame(loop);
 }
 
-function drawUI(){
-  ctx.fillStyle="white";
-  ctx.font="16px Arial";
-  ctx.fillText("Score: "+score,20,25);
-
-  ctx.fillStyle="red";
-  ctx.fillRect(20,35,100,10);
-
-  ctx.fillStyle="lime";
-  ctx.fillRect(20,35,player.energy,10);
-
-  ctx.strokeStyle="white";
-  ctx.strokeRect(20,35,100,10);
-}
-
-function gameOver(text){
-  alert(text);
-  location.reload();
-}
-
-let keys={};
-
-window.addEventListener("keydown",e=>keys[e.key]=true);
-window.addEventListener("keyup",e=>keys[e.key]=false);
+loop();
 </script>
 </body>
 </html>
